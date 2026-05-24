@@ -13,6 +13,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.net.Uri;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
@@ -26,12 +27,15 @@ import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 
+import java.io.BufferedReader;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
 
 public class MainActivity extends Activity {
+    private static final int REQ_IMPORT_DEVICES_FILE = 7101;
     private LinearLayout listLayout;
     private boolean autoOpened = false;
 
@@ -166,11 +170,12 @@ public class MainActivity extends Activity {
     private void showQuickActionDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("設備管理")
-                .setItems(new String[]{"新增設備", "搜尋區網", "導出設備", "匯入設備"}, (dialog, which) -> {
+                .setItems(new String[]{"新增設備", "搜尋區網", "導出設備", "匯入設備檔案", "貼上匯入"}, (dialog, which) -> {
                     if (which == 0) showDeviceDialog(null);
                     if (which == 1) startActivity(new Intent(this, ScanActivity.class));
                     if (which == 2) showExportDevicesDialog();
-                    if (which == 3) showImportDevicesDialog();
+                    if (which == 3) openImportFilePicker();
+                    if (which == 4) showImportDevicesDialog();
                 })
                 .show();
     }
@@ -200,6 +205,76 @@ public class MainActivity extends Activity {
                 .setNegativeButton("關閉", null)
                 .show();
     }
+
+
+    private void openImportFilePicker() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+            String[] mimeTypes = new String[]{
+                    "application/json",
+                    "text/plain",
+                    "application/octet-stream"
+            };
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+            startActivityForResult(intent, REQ_IMPORT_DEVICES_FILE);
+        } catch (Exception e) {
+            new AlertDialog.Builder(this)
+                    .setTitle("無法開啟檔案選擇器")
+                    .setMessage("請改用「貼上匯入」，將 sgre_devices_backup.jsonnn 內容貼上。")
+                    .setPositiveButton("確定", null)
+                    .show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_IMPORT_DEVICES_FILE && resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri == null) return;
+            importDevicesFromUri(uri);
+        }
+    }
+
+    private void importDevicesFromUri(Uri uri) {
+        try {
+            InputStream is = getContentResolver().openInputStream(uri);
+            if (is == null) throw new Exception("openInputStream failed");
+
+            BufferedReader br = new BufferedReader(new InputStreamReader(is));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line).append('\n');
+            }
+            br.close();
+
+            boolean ok = DeviceStore.importJson(this, sb.toString());
+            if (ok) {
+                renderDevices();
+                new AlertDialog.Builder(this)
+                        .setTitle("匯入完成")
+                        .setMessage("已從檔案匯入設備清單。")
+                        .setPositiveButton("確定", null)
+                        .show();
+            } else {
+                new AlertDialog.Builder(this)
+                        .setTitle("匯入失敗")
+                        .setMessage("檔案格式不正確，請確認是 SGRE 匯出的設備備份 JSON。")
+                        .setPositiveButton("確定", null)
+                        .show();
+            }
+        } catch (Exception e) {
+            new AlertDialog.Builder(this)
+                    .setTitle("匯入失敗")
+                    .setMessage("無法讀取檔案，請確認檔案可開啟，或改用貼上匯入。")
+                    .setPositiveButton("確定", null)
+                    .show();
+        }
+    }
+
 
     private void showImportDevicesDialog() {
         EditText input = new EditText(this);
