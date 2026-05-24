@@ -222,7 +222,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             new AlertDialog.Builder(this)
                     .setTitle("無法開啟檔案選擇器")
-                    .setMessage("請改用「貼上匯入」，將 sgre_devices_backup.jsonnn 內容貼上。")
+                    .setMessage("請改用「貼上匯入」，將 sgre_devices_backup.json 內容貼上。")
                     .setPositiveButton("確定", null)
                     .show();
         }
@@ -331,7 +331,8 @@ public class MainActivity extends Activity {
     private void addDeviceCard(DeviceStore.Device d) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(18), dp(15), dp(18), dp(15));
+        // Compact card layout: keep the device list dense like the earlier working version.
+        box.setPadding(dp(12), dp(10), dp(12), dp(10));
         box.setBackground(bg(Color.rgb(248, 250, 252), 22));
 
         LinearLayout row = new LinearLayout(this);
@@ -342,6 +343,7 @@ public class MainActivity extends Activity {
         name.setText(d.name.length() > 0 ? d.name : "未命名設備");
         name.setTextColor(Color.rgb(42, 54, 68));
         name.setTextSize(22);
+        name.setIncludeFontPadding(false);
         name.setTypeface(null, Typeface.BOLD);
         name.setSingleLine(true);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
@@ -349,7 +351,8 @@ public class MainActivity extends Activity {
         CheckBox def = new CheckBox(this);
         def.setChecked(d.isDefault);
         def.setText("預設");
-        def.setTextSize(13);
+        def.setTextSize(14);
+        def.setIncludeFontPadding(false);
         def.setOnClickListener(v -> {
             if (((CheckBox) v).isChecked()) {
                 DeviceStore.setDefault(this, d.id);
@@ -364,7 +367,7 @@ public class MainActivity extends Activity {
 
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(2);
-        grid.setPadding(0, dp(10), 0, dp(6));
+        grid.setPadding(0, dp(8), 0, dp(4));
 
         TextView voltage = metric("電壓", "--");
         TextView power = metric("功率", "--");
@@ -385,13 +388,16 @@ public class MainActivity extends Activity {
         TextView url = new TextView(this);
         url.setText("連線檢查中...");
         url.setTextColor(Color.rgb(120, 130, 135));
-        url.setTextSize(13);
+        url.setTextSize(15);
+        url.setTypeface(null, Typeface.BOLD);
+        url.setIncludeFontPadding(false);
         url.setSingleLine(true);
         bottom.addView(url, new LinearLayout.LayoutParams(0, -2, 1));
 
         TextView arrow = new TextView(this);
         arrow.setText("›");
         arrow.setTextSize(34);
+        arrow.setIncludeFontPadding(false);
         arrow.setTextColor(Color.rgb(185, 195, 204));
         arrow.setGravity(Gravity.CENTER);
         bottom.addView(arrow, new LinearLayout.LayoutParams(dp(42), dp(42)));
@@ -405,7 +411,7 @@ public class MainActivity extends Activity {
         });
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, 0, 0, dp(14));
+        lp.setMargins(0, 0, 0, dp(12));
         listLayout.addView(box, lp);
 
         fetchSummary(d, box, voltage, power, energy, load, url);
@@ -413,17 +419,41 @@ public class MainActivity extends Activity {
 
     private TextView metric(String label, String value) {
         TextView t = new TextView(this);
-        t.setText(label + "\n" + value);
+        setMetricText(t, label, value);
         t.setTextColor(Color.rgb(58, 70, 84));
-        t.setTextSize(15);
-        t.setPadding(dp(6), dp(6), dp(6), dp(6));
+        t.setTextSize(16);
+        t.setTypeface(null, Typeface.BOLD);
+        t.setIncludeFontPadding(false);
+        t.setSingleLine(true);
+        t.setPadding(dp(2), dp(2), dp(3), dp(2));
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
         lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
         lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
-        lp.setMargins(0, 0, dp(8), dp(4));
+        lp.setMargins(0, 0, dp(4), dp(5));
         t.setLayoutParams(lp);
         return t;
+    }
+
+    private void setMetricText(TextView target, String label, String value) {
+        if (value == null || value.length() == 0) {
+            target.setText("");
+        } else if ("可連線".equals(value)) {
+            target.setText(value);
+        } else {
+            target.setText(label + " " + value);
+        }
+    }
+
+    private boolean hasValue(String value) {
+        return value != null && value.length() > 0 && !"--".equals(value);
+    }
+
+    private String firstNonEmpty(String... values) {
+        for (String value : values) {
+            if (value != null && value.length() > 0) return value;
+        }
+        return "";
     }
 
     private String shortUrl(String raw) {
@@ -452,7 +482,14 @@ public class MainActivity extends Activity {
                 }
                 if (alarm.length() > 0) {
                     online = true;
-                    v = num(alarm, "batt_v") + "V";
+                    String battVolt = num(alarm, "batt_v");
+                    String alarmSoc = firstNonEmpty(
+                            num(alarm, "batt_soc"),
+                            num(alarm, "battery_soc"),
+                            num(alarm, "soc"),
+                            num(alarm, "battSoc"));
+                    if (battVolt.length() > 0) v = battVolt + "V";
+                    if (alarmSoc.length() > 0) e = alarmSoc + "%";
                 }
 
                 String live = fetch((usingRemote ? remoteBase : localBase) + "/api/live", 1000, 1600);
@@ -466,11 +503,26 @@ public class MainActivity extends Activity {
                 }
                 if (live.length() > 0) {
                     online = true;
-                    String pv = liveVal(live, "v_pv_total_power");
-                    String today = liveVal(live, "d_pv_energy_today");
-                    String loadPct = liveVal(live, "v_load_percent_total");
+                    String pv = firstNonEmpty(
+                            liveVal(live, "v_pv_total_power"),
+                            liveVal(live, "pv_total_power"),
+                            liveVal(live, "v_pv_power"));
+                    String soc = firstNonEmpty(
+                            liveVal(live, "v_batt_soc"),
+                            liveVal(live, "batt_soc"),
+                            liveVal(live, "s_batt_soc"),
+                            liveVal(live, "v_battery_soc"),
+                            liveVal(live, "battery_soc"),
+                            liveVal(live, "battery_percent"),
+                            liveVal(live, "b_soc"),
+                            liveVal(live, "soc"),
+                            liveVal(live, "v_soc"));
+                    String loadPct = firstNonEmpty(
+                            liveVal(live, "v_load_percent_total"),
+                            liveVal(live, "load_percent_total"),
+                            liveVal(live, "v_load_pct"));
                     if (pv.length() > 0) p = pv + "W";
-                    if (today.length() > 0) e = today + "度";
+                    if (soc.length() > 0) e = soc + "%";
                     if (loadPct.length() > 0) l = loadPct + "%";
                 }
             } else {
@@ -484,7 +536,21 @@ public class MainActivity extends Activity {
                     if (body.length() > 0) activeUrlLabel = "外網 " + shortUrl(d.remoteUrl);
                 }
                 online = body.length() > 0;
-                v = online ? "可連線" : "--";
+                if (online) {
+                    v = "可連線";
+                    p = "";
+                    e = "";
+                    l = "";
+                } else {
+                    v = "--";
+                }
+            }
+
+            if (online && !hasValue(v) && !hasValue(p) && !hasValue(e) && !hasValue(l)) {
+                v = "可連線";
+                p = "";
+                e = "";
+                l = "";
             }
 
             final boolean ok = online;
@@ -495,10 +561,10 @@ public class MainActivity extends Activity {
             final String furl = activeUrlLabel;
 
             runOnUiThread(() -> {
-                voltage.setText("電壓\n" + fv);
-                power.setText("功率\n" + fp);
-                energy.setText("電量\n" + fe);
-                load.setText("負載\n" + fl);
+                setMetricText(voltage, "電壓", fv);
+                setMetricText(power, "功率", fp);
+                setMetricText(energy, "電量", fe);
+                setMetricText(load, "負載", fl);
                 urlLabel.setText(furl);
                 if (!ok) {
                     card.setAlpha(0.55f);
@@ -637,13 +703,16 @@ public class MainActivity extends Activity {
 
     private String num(String json, String key) {
         try {
-            String mark = "\"" + key + "\":";
+            String mark = "\"" + key + "\"";
             int s = json.indexOf(mark);
             if (s < 0) return "";
-            s += mark.length();
-            int e = s;
+            int colon = json.indexOf(":", s + mark.length());
+            if (colon < 0) return "";
+            int v = colon + 1;
+            while (v < json.length() && (json.charAt(v) == ' ' || json.charAt(v) == '\"')) v++;
+            int e = v;
             while (e < json.length() && "-0123456789.".indexOf(json.charAt(e)) >= 0) e++;
-            return json.substring(s, e);
+            return json.substring(v, e);
         } catch (Exception e) {
             return "";
         }
@@ -651,15 +720,31 @@ public class MainActivity extends Activity {
 
     private String liveVal(String json, String id) {
         try {
-            String mark = "\"id\":\"" + id + "\"";
-            int s = json.indexOf(mark);
-            if (s < 0) return "";
-            int v = json.indexOf("\"value\":", s);
-            if (v < 0) return "";
-            v += 8;
-            int e = v;
-            while (e < json.length() && "-0123456789.".indexOf(json.charAt(e)) >= 0) e++;
-            return json.substring(v, e);
+            String mark = "\"id\"";
+            int searchFrom = 0;
+            while (true) {
+                int s = json.indexOf(mark, searchFrom);
+                if (s < 0) return "";
+                int colon = json.indexOf(":", s + mark.length());
+                if (colon < 0) return "";
+                int idStart = json.indexOf("\"", colon + 1);
+                if (idStart < 0) return "";
+                int idEnd = json.indexOf("\"", idStart + 1);
+                if (idEnd < 0) return "";
+                String foundId = json.substring(idStart + 1, idEnd);
+                if (id.equals(foundId)) {
+                    int v = json.indexOf("\"value\"", idEnd);
+                    if (v < 0) return "";
+                    int vc = json.indexOf(":", v);
+                    if (vc < 0) return "";
+                    int valueStart = vc + 1;
+                    while (valueStart < json.length() && (json.charAt(valueStart) == ' ' || json.charAt(valueStart) == '\"')) valueStart++;
+                    int e = valueStart;
+                    while (e < json.length() && "-0123456789.".indexOf(json.charAt(e)) >= 0) e++;
+                    return json.substring(valueStart, e);
+                }
+                searchFrom = idEnd + 1;
+            }
         } catch (Exception e) {
             return "";
         }
