@@ -20,8 +20,8 @@ namespace = "com.sgre.webview"
         applicationId = "com.sgre.webview"
         minSdk = 23
         targetSdk = 35
-        versionCode = 23
-        versionName = "1.0.23"
+        versionCode = 22
+        versionName = "1.0.22"
     }
 
     buildTypes {

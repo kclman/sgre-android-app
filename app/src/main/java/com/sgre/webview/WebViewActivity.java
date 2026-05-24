@@ -1,6 +1,7 @@
 package com.sgre.webview;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.Build;
@@ -8,6 +9,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -26,6 +28,7 @@ public class WebViewActivity extends Activity {
     private TextView loadingText;
     private DeviceStore.Device device;
     private boolean triedRemote = false;
+    private HistoryBridge historyBridge;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -86,11 +89,15 @@ public class WebViewActivity extends Activity {
             s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         }
 
+        historyBridge = new HistoryBridge(getSharedPreferences("sgre_history_" + safeDeviceKey(), MODE_PRIVATE));
+        webView.addJavascriptInterface(historyBridge, "SGREAppHistory");
+
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
                 if (loadingText != null) loadingText.setVisibility(View.GONE);
+                injectHistoryBridge();
                 super.onPageFinished(view, url);
             }
 
@@ -117,6 +124,73 @@ public class WebViewActivity extends Activity {
         root.addView(loadingText, new FrameLayout.LayoutParams(-1, -1));
 
         setContentView(root);
+    }
+
+    private String safeDeviceKey() {
+        try {
+            if (device != null && device.id != null && device.id.length() > 0) {
+                return device.id.replaceAll("[^A-Za-z0-9_]", "_");
+            }
+        } catch (Exception ignored) {
+        }
+        return "default";
+    }
+
+    private void injectHistoryBridge() {
+        if (webView == null) return;
+
+        String js =
+                "(function(){try{"
+                + "if(window.__SGRE_APP_HISTORY_BRIDGE__)return;"
+                + "window.__SGRE_APP_HISTORY_BRIDGE__=true;"
+                + "function pull(k){try{var v=window.SGREAppHistory.getItem(k);var c=localStorage.getItem(k);"
+                + "if(v&&(!c||c.length<v.length)){localStorage.setItem(k,v);}}catch(e){}}"
+                + "pull('sgre_hist_date');pull('sgre_hist_data');"
+                + "var oldSet=localStorage.setItem.bind(localStorage);"
+                + "localStorage.setItem=function(k,v){oldSet(k,v);try{"
+                + "if(k==='sgre_hist_date'||k==='sgre_hist_data'||String(k).indexOf('sgre_chart_')===0){"
+                + "window.SGREAppHistory.setItem(String(k),String(v));}}catch(e){}};"
+                + "['sgre_hist_date','sgre_hist_data'].forEach(function(k){try{var v=localStorage.getItem(k);"
+                + "if(v)window.SGREAppHistory.setItem(k,v);}catch(e){}});"
+                + "}catch(e){}})();";
+
+        if (Build.VERSION.SDK_INT >= 19) {
+            webView.evaluateJavascript(js, null);
+        } else {
+            webView.loadUrl("javascript:" + js);
+        }
+    }
+
+    public static class HistoryBridge {
+        private final SharedPreferences prefs;
+
+        HistoryBridge(SharedPreferences prefs) {
+            this.prefs = prefs;
+        }
+
+        @JavascriptInterface
+        public String getItem(String key) {
+            try {
+                if (key == null) return "";
+                return prefs.getString(key, "");
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public void setItem(String key, String value) {
+            try {
+                if (key == null || value == null) return;
+                if (!key.equals("sgre_hist_date") &&
+                        !key.equals("sgre_hist_data") &&
+                        !key.startsWith("sgre_chart_")) {
+                    return;
+                }
+                prefs.edit().putString(key, value).apply();
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private void loadBestAvailable() {

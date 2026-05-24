@@ -217,20 +217,10 @@ private static final String DEFAULT_URL = "http://192.168.31.201:81";
 
 ## V18 修改
 
-- 保留 V17 的 `匯入設備檔案` 功能。
-- 將首頁設備卡片恢復為緊湊排版：
-  - 電壓 / 功率 / 電量 / 負載 改回單行顯示。
-  - 縮小卡片上下 padding 與項目間距。
-  - 網址列維持顯示目前實際連線來源：內網 / 外網 / 未連線。
-- 修正匯入失敗提示中的檔名 typo。
+- 新增 APK 內部即時線圖快取橋接。
+- 同一台手機的 SGRE App 內，同一設備使用內網或外網入口時，`sgre_hist_data` / `sgre_hist_date` 會共用到 App 私有快取。
+- 不修改 ESP `/history`，不增加 ESP 壓力。
+- 不修改網頁版 Chrome 行為，原本使用 Chrome 的使用者不受影響。
+- WebView 原本的 localStorage 仍保留，App 快取只在 APK 內輔助同步。
 - 固定簽章保留，可直接覆蓋 V13 之後版本。
-- 版本更新為 `1.0.22` / `versionCode 22`。
-
-
-## V19 / 1.0.23
-
-- 設備卡片文字與下方網址列縮排再收緊，維持緊湊卡片排版。
-- 首頁「電量」改抓電池 SOC，優先讀取 /api/live 的 v_batt_soc / batt_soc / v_battery_soc / battery_soc / v_soc。
-- 若設備可連線但沒有抓到任何首頁數值，只顯示「可連線」，不再顯示一整排 --。
-- 保留 V17/V18 的設備 JSON 檔案匯入/匯出功能。
-- 版本更新為 `1.0.23` / `versionCode 23`。
+- 版本更新為 `1.0.22`。
