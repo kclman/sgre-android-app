@@ -1,6 +1,9 @@
 package com.sgre.webview;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -9,12 +12,12 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
-import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
 import android.widget.ArrayAdapter;
+import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.GridLayout;
@@ -22,17 +25,13 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
 
 public class MainActivity extends Activity {
-    private static final int REQ_EXPORT_DEVICES = 2401;
-    private static final int REQ_IMPORT_DEVICES = 2402;
     private LinearLayout listLayout;
     private boolean autoOpened = false;
 
@@ -127,7 +126,7 @@ public class MainActivity extends Activity {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(18), getStatusBarHeight() + dp(2), dp(18), dp(8));
+        header.setPadding(dp(18), getStatusBarHeight() + dp(6), dp(18), dp(10));
         header.setBackgroundColor(blue);
 
         TextView spacer = new TextView(this);
@@ -156,7 +155,7 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         listLayout = new LinearLayout(this);
         listLayout.setOrientation(LinearLayout.VERTICAL);
-        listLayout.setPadding(dp(14), dp(4), dp(14), dp(18));
+        listLayout.setPadding(dp(14), dp(8), dp(14), dp(20));
         scroll.addView(listLayout);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
@@ -178,102 +177,57 @@ public class MainActivity extends Activity {
 
 
     private void showExportDevicesDialog() {
-        try {
-            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("application/json");
-            intent.putExtra(Intent.EXTRA_TITLE, "sgre_devices_backup.json");
-            startActivityForResult(intent, REQ_EXPORT_DEVICES);
-        } catch (Exception e) {
-            Toast.makeText(this, "無法開啟檔案選擇器", Toast.LENGTH_SHORT).show();
-        }
-    }
+        String data = DeviceStore.exportJson(this);
 
-    private void showImportDevicesDialog() {
+        EditText output = new EditText(this);
+        output.setText(data);
+        output.setMinLines(8);
+        output.setSelectAllOnFocus(true);
+
         new AlertDialog.Builder(this)
-                .setTitle("匯入設備")
-                .setMessage("請選擇之前導出的 JSON 備份檔。匯入後會覆蓋目前設備清單，建議先導出備份。")
-                .setPositiveButton("選擇檔案", (dialog, which) -> openImportFilePicker())
-                .setNegativeButton("取消", null)
+                .setTitle("導出設備")
+                .setMessage("以下是設備備份資料，可複製保存。")
+                .setView(output)
+                .setPositiveButton("複製", (dialog, which) -> {
+                    try {
+                        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                        if (cm != null) {
+                            cm.setPrimaryClip(ClipData.newPlainText("SGRE devices", DeviceStore.exportJson(this)));
+                        }
+                    } catch (Exception ignored) {
+                    }
+                })
+                .setNegativeButton("關閉", null)
                 .show();
     }
 
-    private void openImportFilePicker() {
-        try {
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("*/*");
-            intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/json", "text/json", "text/plain", "application/octet-stream"});
-            startActivityForResult(intent, REQ_IMPORT_DEVICES);
-        } catch (Exception e) {
-            try {
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("*/*");
-                startActivityForResult(intent, REQ_IMPORT_DEVICES);
-            } catch (Exception ex) {
-                Toast.makeText(this, "無法開啟檔案選擇器", Toast.LENGTH_SHORT).show();
-            }
-        }
-    }
+    private void showImportDevicesDialog() {
+        EditText input = new EditText(this);
+        input.setHint("請貼上導出的設備 JSON");
+        input.setMinLines(8);
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        Uri uri = data.getData();
-        if (requestCode == REQ_EXPORT_DEVICES) {
-            exportDevicesToUri(uri);
-        } else if (requestCode == REQ_IMPORT_DEVICES) {
-            importDevicesFromUri(uri);
-        }
-    }
-
-    private void exportDevicesToUri(Uri uri) {
-        try (OutputStream os = getContentResolver().openOutputStream(uri, "wt")) {
-            if (os == null) throw new Exception("openOutputStream failed");
-            os.write(DeviceStore.exportJson(this).getBytes("UTF-8"));
-            os.flush();
-            Toast.makeText(this, "設備備份已導出", Toast.LENGTH_SHORT).show();
-        } catch (Exception e) {
-            new AlertDialog.Builder(this)
-                    .setTitle("導出失敗")
-                    .setMessage("無法寫入備份檔，請重新選擇儲存位置。")
-                    .setPositiveButton("確定", null)
-                    .show();
-        }
-    }
-
-    private void importDevicesFromUri(Uri uri) {
-        try (InputStream is = getContentResolver().openInputStream(uri)) {
-            if (is == null) throw new Exception("openInputStream failed");
-            byte[] buf = new byte[8192];
-            StringBuilder sb = new StringBuilder();
-            int n;
-            while ((n = is.read(buf)) > 0) {
-                sb.append(new String(buf, 0, n, "UTF-8"));
-            }
-            boolean ok = DeviceStore.importJson(this, sb.toString());
-            if (ok) {
-                renderDevices();
-                new AlertDialog.Builder(this)
-                        .setTitle("匯入完成")
-                        .setMessage("設備清單已由檔案更新。")
-                        .setPositiveButton("確定", null)
-                        .show();
-            } else {
-                showImportFailedDialog();
-            }
-        } catch (Exception e) {
-            showImportFailedDialog();
-        }
-    }
-
-    private void showImportFailedDialog() {
         new AlertDialog.Builder(this)
-                .setTitle("匯入失敗")
-                .setMessage("檔案格式不正確，請確認選擇的是完整設備 JSON 備份檔。")
-                .setPositiveButton("確定", null)
+                .setTitle("匯入設備")
+                .setMessage("匯入會覆蓋目前設備清單，請先確認已備份。")
+                .setView(input)
+                .setPositiveButton("匯入", (dialog, which) -> {
+                    boolean ok = DeviceStore.importJson(this, input.getText().toString());
+                    if (ok) {
+                        renderDevices();
+                        new AlertDialog.Builder(this)
+                                .setTitle("匯入完成")
+                                .setMessage("設備清單已更新。")
+                                .setPositiveButton("確定", null)
+                                .show();
+                    } else {
+                        new AlertDialog.Builder(this)
+                                .setTitle("匯入失敗")
+                                .setMessage("格式不正確，請確認貼上的是完整設備 JSON。")
+                                .setPositiveButton("確定", null)
+                                .show();
+                    }
+                })
+                .setNegativeButton("取消", null)
                 .show();
     }
 
@@ -289,7 +243,7 @@ public class MainActivity extends Activity {
             empty.setTextSize(18);
             empty.setTextColor(Color.WHITE);
             empty.setGravity(Gravity.CENTER);
-            empty.setPadding(dp(25), dp(72), dp(25), dp(20));
+            empty.setPadding(dp(25), dp(90), dp(25), dp(20));
             listLayout.addView(empty, new LinearLayout.LayoutParams(-1, -2));
             return;
         }
@@ -302,8 +256,8 @@ public class MainActivity extends Activity {
     private void addDeviceCard(DeviceStore.Device d) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(16), dp(10), dp(16), dp(10));
-        box.setBackground(bg(Color.rgb(238, 241, 245), 22));
+        box.setPadding(dp(18), dp(15), dp(18), dp(15));
+        box.setBackground(bg(Color.rgb(248, 250, 252), 22));
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -312,7 +266,7 @@ public class MainActivity extends Activity {
         TextView name = new TextView(this);
         name.setText(d.name.length() > 0 ? d.name : "未命名設備");
         name.setTextColor(Color.rgb(42, 54, 68));
-        name.setTextSize(19);
+        name.setTextSize(22);
         name.setTypeface(null, Typeface.BOLD);
         name.setSingleLine(true);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
@@ -335,12 +289,12 @@ public class MainActivity extends Activity {
 
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(2);
-        grid.setPadding(0, dp(4), 0, dp(2));
+        grid.setPadding(0, dp(10), 0, dp(6));
 
-        TextView voltage = metric("電壓", "");
-        TextView power = metric("功率", "");
-        TextView energy = metric("電量", "");
-        TextView load = metric("負載", "");
+        TextView voltage = metric("電壓", "--");
+        TextView power = metric("功率", "--");
+        TextView energy = metric("電量", "--");
+        TextView load = metric("負載", "--");
 
         grid.addView(voltage);
         grid.addView(power);
@@ -354,7 +308,7 @@ public class MainActivity extends Activity {
         bottom.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView url = new TextView(this);
-        url.setText("內網 " + shortUrl(d.localUrl));
+        url.setText("連線檢查中...");
         url.setTextColor(Color.rgb(120, 130, 135));
         url.setTextSize(13);
         url.setSingleLine(true);
@@ -362,10 +316,10 @@ public class MainActivity extends Activity {
 
         TextView arrow = new TextView(this);
         arrow.setText("›");
-        arrow.setTextSize(30);
+        arrow.setTextSize(34);
         arrow.setTextColor(Color.rgb(185, 195, 204));
         arrow.setGravity(Gravity.CENTER);
-        bottom.addView(arrow, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        bottom.addView(arrow, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
         box.addView(bottom);
 
@@ -376,31 +330,25 @@ public class MainActivity extends Activity {
         });
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, 0, 0, dp(10));
+        lp.setMargins(0, 0, 0, dp(14));
         listLayout.addView(box, lp);
 
-        fetchSummary(d, box, voltage, power, energy, load);
+        fetchSummary(d, box, voltage, power, energy, load, url);
     }
 
     private TextView metric(String label, String value) {
         TextView t = new TextView(this);
-        t.setText(metricLine(label, value));
+        t.setText(label + "\n" + value);
         t.setTextColor(Color.rgb(58, 70, 84));
-        t.setTextSize(14);
-        t.setTypeface(null, Typeface.BOLD);
-        t.setPadding(dp(4), dp(3), dp(4), dp(3));
+        t.setTextSize(15);
+        t.setPadding(dp(6), dp(6), dp(6), dp(6));
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
         lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
         lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
-        lp.setMargins(0, 0, dp(8), dp(1));
+        lp.setMargins(0, 0, dp(8), dp(4));
         t.setLayoutParams(lp);
         return t;
-    }
-
-    private String metricLine(String label, String value) {
-        String v = value == null ? "" : value.trim();
-        return v.length() == 0 ? label : (label + " " + v);
     }
 
     private String shortUrl(String raw) {
@@ -408,55 +356,60 @@ public class MainActivity extends Activity {
         return raw.replace("http://", "").replace("https://", "");
     }
 
-    private void fetchSummary(DeviceStore.Device d, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load) {
+    private void fetchSummary(DeviceStore.Device d, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load, TextView urlLabel) {
         new Thread(() -> {
             boolean online = false;
-            String v = "";
+            String v = "--";
             String p = "--";
             String e = "--";
             String l = "--";
+            String activeUrlLabel = "未連線";
 
             if ("SGRE".equals(d.type)) {
-                String alarm = fetch(apiBase(d) + "/api/alarm", 900, 1200);
-                if (alarm.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
-                    alarm = fetch(originOnly(d.remoteUrl) + "/api/alarm", 1200, 1600);
+                String localBase = apiBase(d);
+                String remoteBase = originOnly(d.remoteUrl);
+                boolean usingRemote = false;
+
+                String alarm = fetch(localBase + "/api/alarm", 900, 1200);
+                if (alarm.length() == 0 && remoteBase != null && remoteBase.trim().length() > 0) {
+                    alarm = fetch(remoteBase + "/api/alarm", 1200, 1600);
+                    if (alarm.length() > 0) usingRemote = true;
                 }
                 if (alarm.length() > 0) {
                     online = true;
-                    String bv = num(alarm, "batt_v");
-                    if (bv.length() == 0) bv = num(alarm, "battery_v");
-                    if (bv.length() > 0) v = cleanNumber(bv, 1) + "V";
-                    String soc = num(alarm, "batt_soc");
-                    if (soc.length() == 0) soc = num(alarm, "battery_soc");
-                    if (soc.length() == 0) soc = num(alarm, "soc");
-                    if (soc.length() > 0) e = whole(soc) + "%";
+                    v = num(alarm, "batt_v") + "V";
                 }
 
-                String live = fetch(apiBase(d) + "/api/live", 1000, 1600);
-                if (live.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
-                    live = fetch(originOnly(d.remoteUrl) + "/api/live", 1200, 1800);
+                String live = fetch((usingRemote ? remoteBase : localBase) + "/api/live", 1000, 1600);
+                if (live.length() == 0 && !usingRemote && remoteBase != null && remoteBase.trim().length() > 0) {
+                    live = fetch(remoteBase + "/api/live", 1200, 1800);
+                    if (live.length() > 0) usingRemote = true;
+                }
+
+                if (online || live.length() > 0) {
+                    activeUrlLabel = usingRemote ? "外網 " + shortUrl(d.remoteUrl) : "內網 " + shortUrl(d.localUrl);
                 }
                 if (live.length() > 0) {
                     online = true;
                     String pv = liveVal(live, "v_pv_total_power");
-                    String soc = liveVal(live, "v_batt_soc");
-                    if (soc.length() == 0) soc = liveVal(live, "v_battery_soc");
-                    if (soc.length() == 0) soc = liveVal(live, "batt_soc");
-                    if (soc.length() == 0) soc = liveVal(live, "battery_soc");
-                    if (soc.length() == 0) soc = liveVal(live, "soc");
+                    String today = liveVal(live, "d_pv_energy_today");
                     String loadPct = liveVal(live, "v_load_percent_total");
-                    if (loadPct.length() == 0) loadPct = liveVal(live, "load_percent_total");
-                    if (pv.length() > 0) p = whole(pv) + "W";
-                    if (soc.length() > 0) e = whole(soc) + "%";
-                    if (loadPct.length() > 0) l = whole(loadPct) + "%";
+                    if (pv.length() > 0) p = pv + "W";
+                    if (today.length() > 0) e = today + "度";
+                    if (loadPct.length() > 0) l = loadPct + "%";
                 }
             } else {
-                String body = fetch(firstUrl(d), 1000, 1400);
+                String body = "";
+                if (d.localUrl != null && d.localUrl.trim().length() > 0) {
+                    body = fetch(DeviceStore.normalize(d.localUrl), 1000, 1400);
+                    if (body.length() > 0) activeUrlLabel = "內網 " + shortUrl(d.localUrl);
+                }
+                if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
+                    body = fetch(DeviceStore.normalize(d.remoteUrl), 1200, 1600);
+                    if (body.length() > 0) activeUrlLabel = "外網 " + shortUrl(d.remoteUrl);
+                }
                 online = body.length() > 0;
-                v = online ? "可連線" : "";
-                p = "";
-                e = "";
-                l = "";
+                v = online ? "可連線" : "--";
             }
 
             final boolean ok = online;
@@ -464,18 +417,20 @@ public class MainActivity extends Activity {
             final String fp = p;
             final String fe = e;
             final String fl = l;
+            final String furl = activeUrlLabel;
 
             runOnUiThread(() -> {
-                voltage.setText(metricLine("電壓", fv));
-                power.setText(metricLine("功率", fp));
-                energy.setText(metricLine("電量", fe));
-                load.setText(metricLine("負載", fl));
+                voltage.setText("電壓\n" + fv);
+                power.setText("功率\n" + fp);
+                energy.setText("電量\n" + fe);
+                load.setText("負載\n" + fl);
+                urlLabel.setText(furl);
                 if (!ok) {
                     card.setAlpha(0.55f);
                     card.setBackground(bg(Color.rgb(210, 215, 222), 22));
                 } else {
                     card.setAlpha(1f);
-                    card.setBackground(bg(Color.rgb(238, 241, 245), 22));
+                    card.setBackground(bg(Color.rgb(248, 250, 252), 22));
                 }
             });
         }).start();
@@ -587,25 +542,20 @@ public class MainActivity extends Activity {
     private String fetch(String url, int cto, int rto) {
         if (url == null || url.length() == 0) return "";
         HttpURLConnection conn = null;
-        InputStream is = null;
         try {
             conn = (HttpURLConnection) new URL(url).openConnection();
             conn.setConnectTimeout(cto);
             conn.setReadTimeout(rto);
             conn.setRequestMethod("GET");
             if (conn.getResponseCode() != 200) return "";
-            is = conn.getInputStream();
+            InputStream is = conn.getInputStream();
             byte[] buf = new byte[4096];
-            StringBuilder sb = new StringBuilder();
-            int n;
-            while ((n = is.read(buf)) > 0) {
-                sb.append(new String(buf, 0, n));
-            }
-            return sb.toString();
+            int n = is.read(buf);
+            if (n <= 0) return "";
+            return new String(buf, 0, n);
         } catch (Exception e) {
             return "";
         } finally {
-            try { if (is != null) is.close(); } catch (Exception ignored) {}
             if (conn != null) conn.disconnect();
         }
     }
@@ -637,27 +587,6 @@ public class MainActivity extends Activity {
             return json.substring(v, e);
         } catch (Exception e) {
             return "";
-        }
-    }
-
-    private String whole(String raw) {
-        try {
-            return String.valueOf(Math.round(Double.parseDouble(raw)));
-        } catch (Exception e) {
-            return raw == null ? "" : raw;
-        }
-    }
-
-    private String cleanNumber(String raw, int digits) {
-        try {
-            double v = Double.parseDouble(raw);
-            if (digits <= 0) return String.valueOf(Math.round(v));
-            String out = String.format(java.util.Locale.US, "% .".replace(" ", "") + digits + "f", v);
-            while (out.contains(".") && out.endsWith("0")) out = out.substring(0, out.length() - 1);
-            if (out.endsWith(".")) out = out.substring(0, out.length() - 1);
-            return out;
-        } catch (Exception e) {
-            return raw == null ? "" : raw;
         }
     }
 
