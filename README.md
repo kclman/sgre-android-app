@@ -225,3 +225,12 @@ private static final String DEFAULT_URL = "http://192.168.31.201:81";
 - 修正匯入失敗提示中的檔名 typo。
 - 固定簽章保留，可直接覆蓋 V13 之後版本。
 - 版本更新為 `1.0.22` / `versionCode 22`。
+
+
+## V19 / 1.0.23
+
+- 設備卡片文字與下方網址列縮排再收緊，維持緊湊卡片排版。
+- 首頁「電量」改抓電池 SOC，優先讀取 /api/live 的 v_batt_soc / batt_soc / v_battery_soc / battery_soc / v_soc。
+- 若設備可連線但沒有抓到任何首頁數值，只顯示「可連線」，不再顯示一整排 --。
+- 保留 V17/V18 的設備 JSON 檔案匯入/匯出功能。
+- 版本更新為 `1.0.23` / `versionCode 23`。
