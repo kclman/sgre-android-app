@@ -222,7 +222,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             new AlertDialog.Builder(this)
                     .setTitle("無法開啟檔案選擇器")
-                    .setMessage("請改用「貼上匯入」，將 sgre_devices_backup.jsonnn 內容貼上。")
+                    .setMessage("請改用「貼上匯入」，將 sgre_devices_backup.json 內容貼上。")
                     .setPositiveButton("確定", null)
                     .show();
         }
@@ -331,7 +331,8 @@ public class MainActivity extends Activity {
     private void addDeviceCard(DeviceStore.Device d) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(18), dp(15), dp(18), dp(15));
+        // Compact card layout: keep the device list dense like the earlier working version.
+        box.setPadding(dp(16), dp(12), dp(16), dp(12));
         box.setBackground(bg(Color.rgb(248, 250, 252), 22));
 
         LinearLayout row = new LinearLayout(this);
@@ -342,6 +343,7 @@ public class MainActivity extends Activity {
         name.setText(d.name.length() > 0 ? d.name : "未命名設備");
         name.setTextColor(Color.rgb(42, 54, 68));
         name.setTextSize(22);
+        name.setIncludeFontPadding(false);
         name.setTypeface(null, Typeface.BOLD);
         name.setSingleLine(true);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
@@ -349,7 +351,8 @@ public class MainActivity extends Activity {
         CheckBox def = new CheckBox(this);
         def.setChecked(d.isDefault);
         def.setText("預設");
-        def.setTextSize(13);
+        def.setTextSize(14);
+        def.setIncludeFontPadding(false);
         def.setOnClickListener(v -> {
             if (((CheckBox) v).isChecked()) {
                 DeviceStore.setDefault(this, d.id);
@@ -364,7 +367,7 @@ public class MainActivity extends Activity {
 
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(2);
-        grid.setPadding(0, dp(10), 0, dp(6));
+        grid.setPadding(0, dp(12), 0, dp(8));
 
         TextView voltage = metric("電壓", "--");
         TextView power = metric("功率", "--");
@@ -385,13 +388,16 @@ public class MainActivity extends Activity {
         TextView url = new TextView(this);
         url.setText("連線檢查中...");
         url.setTextColor(Color.rgb(120, 130, 135));
-        url.setTextSize(13);
+        url.setTextSize(16);
+        url.setTypeface(null, Typeface.BOLD);
+        url.setIncludeFontPadding(false);
         url.setSingleLine(true);
         bottom.addView(url, new LinearLayout.LayoutParams(0, -2, 1));
 
         TextView arrow = new TextView(this);
         arrow.setText("›");
         arrow.setTextSize(34);
+        arrow.setIncludeFontPadding(false);
         arrow.setTextColor(Color.rgb(185, 195, 204));
         arrow.setGravity(Gravity.CENTER);
         bottom.addView(arrow, new LinearLayout.LayoutParams(dp(42), dp(42)));
@@ -405,7 +411,7 @@ public class MainActivity extends Activity {
         });
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, 0, 0, dp(14));
+        lp.setMargins(0, 0, 0, dp(12));
         listLayout.addView(box, lp);
 
         fetchSummary(d, box, voltage, power, energy, load, url);
@@ -413,17 +419,24 @@ public class MainActivity extends Activity {
 
     private TextView metric(String label, String value) {
         TextView t = new TextView(this);
-        t.setText(label + "\n" + value);
+        setMetricText(t, label, value);
         t.setTextColor(Color.rgb(58, 70, 84));
-        t.setTextSize(15);
-        t.setPadding(dp(6), dp(6), dp(6), dp(6));
+        t.setTextSize(17);
+        t.setTypeface(null, Typeface.BOLD);
+        t.setIncludeFontPadding(false);
+        t.setSingleLine(true);
+        t.setPadding(dp(6), dp(3), dp(6), dp(3));
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
         lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
         lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
-        lp.setMargins(0, 0, dp(8), dp(4));
+        lp.setMargins(0, 0, dp(8), dp(8));
         t.setLayoutParams(lp);
         return t;
+    }
+
+    private void setMetricText(TextView target, String label, String value) {
+        target.setText(label + " " + value);
     }
 
     private String shortUrl(String raw) {
@@ -495,10 +508,10 @@ public class MainActivity extends Activity {
             final String furl = activeUrlLabel;
 
             runOnUiThread(() -> {
-                voltage.setText("電壓\n" + fv);
-                power.setText("功率\n" + fp);
-                energy.setText("電量\n" + fe);
-                load.setText("負載\n" + fl);
+                setMetricText(voltage, "電壓", fv);
+                setMetricText(power, "功率", fp);
+                setMetricText(energy, "電量", fe);
+                setMetricText(load, "負載", fl);
                 urlLabel.setText(furl);
                 if (!ok) {
                     card.setAlpha(0.55f);
