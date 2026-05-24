@@ -245,3 +245,15 @@ private static final String DEFAULT_URL = "http://192.168.31.201:81";
 - WebView 原本的 localStorage 仍保留，App 快取只在 APK 內輔助同步。
 - 固定簽章保留，可直接覆蓋 V13 之後版本。
 - 版本更新為 `1.0.24`。
+
+
+## V21 修改
+
+- 修正 APK 內開啟 `/view` 時，網頁最上方與手機系統狀態列重疊的問題。
+- 此修正只針對 APK 的 WebViewActivity：
+  - URL 包含 `/view` 時，原生容器會自動加上狀態列高度 padding。
+  - `/phone` 不加 padding，保持原本正常排版。
+- 不修改 ESP 網頁檔案，不影響 Chrome 使用者。
+- 保留 V20 APK 即時線圖快取橋接。
+- 固定簽章保留，可直接覆蓋 V13 之後版本。
+- 版本更新為 `1.0.25`。

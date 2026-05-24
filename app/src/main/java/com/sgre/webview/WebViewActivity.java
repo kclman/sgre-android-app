@@ -24,6 +24,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 public class WebViewActivity extends Activity {
+    private FrameLayout rootLayout;
     private WebView webView;
     private TextView loadingText;
     private DeviceStore.Device device;
@@ -67,9 +68,31 @@ public class WebViewActivity extends Activity {
         }
     }
 
+    private int getStatusBarHeight() {
+        int result = 0;
+        try {
+            int resId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+            if (resId > 0) result = getResources().getDimensionPixelSize(resId);
+        } catch (Exception ignored) {
+        }
+        return result;
+    }
+
+    private void applyViewInsetForUrl(String url) {
+        if (rootLayout == null) return;
+        try {
+            String u = url == null ? "" : url.toLowerCase();
+            // 只修 APK 內的 /view 頁面；/phone 原本正常，不加 padding。
+            boolean isViewPage = u.contains("/view");
+            int top = isViewPage ? getStatusBarHeight() : 0;
+            rootLayout.setPadding(0, top, 0, 0);
+        } catch (Exception ignored) {
+        }
+    }
+
     private void buildWebView() {
-        FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(isDarkMode() ? Color.rgb(17, 24, 39) : Color.WHITE);
+        rootLayout = new FrameLayout(this);
+        rootLayout.setBackgroundColor(isDarkMode() ? Color.rgb(17, 24, 39) : Color.WHITE);
 
         webView = new WebView(this);
         WebSettings s = webView.getSettings();
@@ -96,6 +119,7 @@ public class WebViewActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
+                applyViewInsetForUrl(url);
                 if (loadingText != null) loadingText.setVisibility(View.GONE);
                 injectHistoryBridge();
                 super.onPageFinished(view, url);
@@ -114,16 +138,16 @@ public class WebViewActivity extends Activity {
             }
         });
 
-        root.addView(webView, new FrameLayout.LayoutParams(-1, -1));
+        rootLayout.addView(webView, new FrameLayout.LayoutParams(-1, -1));
 
         loadingText = new TextView(this);
         loadingText.setText("連線中...");
         loadingText.setTextSize(18);
         loadingText.setTextColor(Color.rgb(90, 98, 108));
         loadingText.setGravity(Gravity.CENTER);
-        root.addView(loadingText, new FrameLayout.LayoutParams(-1, -1));
+        rootLayout.addView(loadingText, new FrameLayout.LayoutParams(-1, -1));
 
-        setContentView(root);
+        setContentView(rootLayout);
     }
 
     private String safeDeviceKey() {
@@ -231,6 +255,7 @@ public class WebViewActivity extends Activity {
                     Toast.makeText(this, "內網無法開啟，使用外網", Toast.LENGTH_SHORT).show();
                     triedRemote = true;
                 }
+                applyViewInsetForUrl(finalTarget);
                 webView.loadUrl(finalTarget);
             });
         }).start();
@@ -265,6 +290,7 @@ public class WebViewActivity extends Activity {
                 loadingText.setText("切換外網中...");
             }
             Toast.makeText(this, toast, Toast.LENGTH_SHORT).show();
+            applyViewInsetForUrl(remote);
             webView.loadUrl(remote);
         });
     }
