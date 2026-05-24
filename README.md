@@ -190,3 +190,11 @@ private static final String DEFAULT_URL = "http://192.168.31.201:81";
 - BMS / WEB 類設備也會先測內網，失敗後測外網，並更新卡片網址列。
 - 固定簽章保留，可直接覆蓋 V13 之後版本。
 - 版本更新為 `1.0.19`。
+
+
+## V16.1 修改
+
+- 重新整理成 GitHub 根目錄直接覆蓋版。
+- 不含外層專案資料夾，不含 report txt/json。
+- 保留固定簽章 keystore。
+- 版本更新為 `1.0.20` / `versionCode 20`，避免同版 APK 安裝器誤判。
