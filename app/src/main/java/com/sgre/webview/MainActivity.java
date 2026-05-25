@@ -579,7 +579,7 @@ public class MainActivity extends Activity {
             String p = "--";
             String e = "--";
             String l = "--";
-            String activeUrlLabel = "未連線";
+            String activeUrlLabel = "";
 
             if ("SGRE".equals(d.type)) {
                 String localBase = apiBase(d);
@@ -610,7 +610,7 @@ public class MainActivity extends Activity {
                 }
 
                 if (online || live.length() > 0) {
-                    activeUrlLabel = usingRemote ? "外網 " + shortUrl(d.remoteUrl) : "內網 " + shortUrl(d.localUrl);
+                    activeUrlLabel = "";
                 }
                 if (live.length() > 0) {
                     online = true;
@@ -640,11 +640,11 @@ public class MainActivity extends Activity {
                 String body = "";
                 if (d.localUrl != null && d.localUrl.trim().length() > 0) {
                     body = fetch(DeviceStore.normalize(d.localUrl), 1000, 1400);
-                    if (body.length() > 0) activeUrlLabel = "內網 " + shortUrl(d.localUrl);
+                    if (body.length() > 0) activeUrlLabel = "";
                 }
                 if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
                     body = fetch(DeviceStore.normalize(d.remoteUrl), 1200, 1600);
-                    if (body.length() > 0) activeUrlLabel = "外網 " + shortUrl(d.remoteUrl);
+                    if (body.length() > 0) activeUrlLabel = "";
                 }
                 online = body.length() > 0;
                 if (online) {

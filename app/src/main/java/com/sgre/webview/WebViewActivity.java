@@ -82,9 +82,9 @@ public class WebViewActivity extends Activity {
         if (rootLayout == null) return;
         try {
             String u = url == null ? "" : url.toLowerCase();
-            // 只修 APK 內的 /view 頁面；/phone 原本正常，不加 padding。
-            boolean isViewPage = u.contains("/view");
-            int top = isViewPage ? getStatusBarHeight() : 0;
+            // App 內所有新增設備預設避開系統狀態列；已針對手機版最佳化的 /phone 例外。
+            boolean isPhonePage = u.contains("/phone");
+            int top = isPhonePage ? 0 : getStatusBarHeight();
             rootLayout.setPadding(0, top, 0, 0);
         } catch (Exception ignored) {
         }
@@ -127,13 +127,13 @@ public class WebViewActivity extends Activity {
 
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                tryRemoteFallback("內網無法開啟，切換外網");
+                tryRemoteFallback("");
             }
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (Build.VERSION.SDK_INT >= 21 && request != null && request.isForMainFrame()) {
-                    tryRemoteFallback("頁面載入失敗，切換外網");
+                    tryRemoteFallback("");
                 }
             }
         });
@@ -141,10 +141,11 @@ public class WebViewActivity extends Activity {
         rootLayout.addView(webView, new FrameLayout.LayoutParams(-1, -1));
 
         loadingText = new TextView(this);
-        loadingText.setText("連線中...");
+        loadingText.setText("");
         loadingText.setTextSize(18);
         loadingText.setTextColor(Color.rgb(90, 98, 108));
         loadingText.setGravity(Gravity.CENTER);
+        loadingText.setVisibility(View.GONE);
         rootLayout.addView(loadingText, new FrameLayout.LayoutParams(-1, -1));
 
         setContentView(rootLayout);
@@ -227,8 +228,7 @@ public class WebViewActivity extends Activity {
             return;
         }
 
-        loadingText.setVisibility(View.VISIBLE);
-        loadingText.setText("檢查連線中...");
+        if (loadingText != null) loadingText.setVisibility(View.GONE);
 
         new Thread(() -> {
             String target = local;
@@ -252,7 +252,6 @@ public class WebViewActivity extends Activity {
                     return;
                 }
                 if (usedRemote) {
-                    Toast.makeText(this, "內網無法開啟，使用外網", Toast.LENGTH_SHORT).show();
                     triedRemote = true;
                 }
                 applyViewInsetForUrl(finalTarget);
@@ -286,10 +285,9 @@ public class WebViewActivity extends Activity {
         triedRemote = true;
         runOnUiThread(() -> {
             if (loadingText != null) {
-                loadingText.setVisibility(View.VISIBLE);
-                loadingText.setText("切換外網中...");
+                loadingText.setText("");
+                loadingText.setVisibility(View.GONE);
             }
-            Toast.makeText(this, toast, Toast.LENGTH_SHORT).show();
             applyViewInsetForUrl(remote);
             webView.loadUrl(remote);
         });
