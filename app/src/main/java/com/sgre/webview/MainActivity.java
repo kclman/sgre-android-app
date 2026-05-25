@@ -197,12 +197,11 @@ public class MainActivity extends Activity {
     private void showQuickActionDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("設備管理")
-                .setItems(new String[]{"新增設備", "搜尋區網", "導出設備", "匯入設備檔案", "貼上匯入"}, (dialog, which) -> {
+                .setItems(new String[]{"新增設備", "搜尋設備", "導出設備檔案", "匯入設備檔案"}, (dialog, which) -> {
                     if (which == 0) showDeviceDialog(null);
                     if (which == 1) startActivity(new Intent(this, ScanActivity.class));
                     if (which == 2) showExportDevicesDialog();
                     if (which == 3) openImportFilePicker();
-                    if (which == 4) showImportDevicesDialog();
                 })
                 .show();
     }
@@ -217,8 +216,8 @@ public class MainActivity extends Activity {
         output.setSelectAllOnFocus(true);
 
         new AlertDialog.Builder(this)
-                .setTitle("導出設備")
-                .setMessage("以下是設備備份資料，可複製保存。")
+                .setTitle("導出設備檔案")
+                .setMessage("以下是設備備份資料，可複製保存為 sgre_devices_backup.json。")
                 .setView(output)
                 .setPositiveButton("複製", (dialog, which) -> {
                     try {
@@ -249,7 +248,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             new AlertDialog.Builder(this)
                     .setTitle("無法開啟檔案選擇器")
-                    .setMessage("請改用「貼上匯入」，將 sgre_devices_backup.json 內容貼上。")
+                    .setMessage("檔案選擇器無法開啟時，可重新安裝檔案管理器，或先用舊版貼上匯入。")
                     .setPositiveButton("確定", null)
                     .show();
         }
@@ -572,6 +571,31 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void saveDeviceRuntime(DeviceStore.Device d, String status) {
+        try {
+            if (d == null || d.id == null) return;
+            getSharedPreferences("sgre_device_runtime", MODE_PRIVATE).edit()
+                    .putString(d.id + "_status", status == null ? "" : status)
+                    .putLong(d.id + "_time", System.currentTimeMillis())
+                    .apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String getDeviceRuntime(DeviceStore.Device d) {
+        try {
+            if (d == null || d.id == null) return "目前連線：尚未檢查";
+            SharedPreferences p = getSharedPreferences("sgre_device_runtime", MODE_PRIVATE);
+            String s = p.getString(d.id + "_status", "");
+            long t = p.getLong(d.id + "_time", 0);
+            if (s == null || s.length() == 0) return "目前連線：尚未檢查";
+            if (t > 0) return s + "\n更新時間：" + fmtTime(t);
+            return s;
+        } catch (Exception e) {
+            return "目前連線：尚未檢查";
+        }
+    }
+
     private void fetchSummary(DeviceStore.Device d, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load, TextView urlLabel) {
         new Thread(() -> {
             boolean online = false;
@@ -579,7 +603,7 @@ public class MainActivity extends Activity {
             String p = "--";
             String e = "--";
             String l = "--";
-            String activeUrlLabel = "";
+            String activeUrlLabel = "目前連線：未連線";
 
             if ("SGRE".equals(d.type)) {
                 String localBase = apiBase(d);
@@ -610,7 +634,7 @@ public class MainActivity extends Activity {
                 }
 
                 if (online || live.length() > 0) {
-                    activeUrlLabel = "";
+                    activeUrlLabel = usingRemote ? "目前外網：" + shortUrl(d.remoteUrl) : "目前內網：" + shortUrl(d.localUrl);
                 }
                 if (live.length() > 0) {
                     online = true;
@@ -640,11 +664,11 @@ public class MainActivity extends Activity {
                 String body = "";
                 if (d.localUrl != null && d.localUrl.trim().length() > 0) {
                     body = fetch(DeviceStore.normalize(d.localUrl), 1000, 1400);
-                    if (body.length() > 0) activeUrlLabel = "";
+                    if (body.length() > 0) activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
                 }
                 if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
                     body = fetch(DeviceStore.normalize(d.remoteUrl), 1200, 1600);
-                    if (body.length() > 0) activeUrlLabel = "";
+                    if (body.length() > 0) activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
                 }
                 online = body.length() > 0;
                 if (online) {
@@ -676,7 +700,8 @@ public class MainActivity extends Activity {
                 setMetricText(power, "功率", fp);
                 setMetricText(energy, "電量", fe);
                 setMetricText(load, "負載", fl);
-                if (urlLabel != null) urlLabel.setText(furl);
+                saveDeviceRuntime(d, ok ? furl : "目前連線：未連線");
+                if (urlLabel != null) urlLabel.setText("");
                 if (!ok) {
                     card.setAlpha(0.55f);
                     card.setBackground(bg(Color.rgb(210, 215, 222), 22));
@@ -717,8 +742,15 @@ public class MainActivity extends Activity {
     }
 
     private void showDeviceActionDialog(DeviceStore.Device d) {
+        String local = (d.localUrl == null || d.localUrl.trim().length() == 0) ? "未設定" : d.localUrl;
+        String remote = (d.remoteUrl == null || d.remoteUrl.trim().length() == 0) ? "未設定" : d.remoteUrl;
+        String info = getDeviceRuntime(d)
+                + "\n\n設定內網：" + local
+                + "\n設定外網：" + remote;
+
         new AlertDialog.Builder(this)
                 .setTitle(d.name)
+                .setMessage(info)
                 .setItems(new String[]{"編輯", "設為預設", "刪除"}, (dialog, which) -> {
                     if (which == 0) showDeviceDialog(d);
                     if (which == 1) {
