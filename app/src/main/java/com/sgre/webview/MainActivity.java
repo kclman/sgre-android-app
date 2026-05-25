@@ -5,7 +5,9 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.app.AlertDialog;
+import android.app.NotificationManager;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -170,12 +172,13 @@ public class MainActivity extends Activity {
     private void showQuickActionDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("設備管理")
-                .setItems(new String[]{"新增設備", "搜尋區網", "導出設備", "匯入設備檔案", "貼上匯入"}, (dialog, which) -> {
+                .setItems(new String[]{"新增設備", "搜尋區網", "導出設備", "匯入設備檔案", "貼上匯入", "警報除錯"}, (dialog, which) -> {
                     if (which == 0) showDeviceDialog(null);
                     if (which == 1) startActivity(new Intent(this, ScanActivity.class));
                     if (which == 2) showExportDevicesDialog();
                     if (which == 3) openImportFilePicker();
                     if (which == 4) showImportDevicesDialog();
+                    if (which == 5) showAlarmDebugDialog();
                 })
                 .show();
     }
@@ -306,6 +309,104 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+
+
+    private String fmtTime(long ms) {
+        if (ms <= 0) return "尚無";
+        try {
+            java.text.SimpleDateFormat f = new java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.TAIWAN);
+            return f.format(new java.util.Date(ms));
+        } catch (Exception e) {
+            return String.valueOf(ms);
+        }
+    }
+
+    private boolean notificationsAllowed() {
+        try {
+            if (Build.VERSION.SDK_INT >= 33 &&
+                    checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+            if (Build.VERSION.SDK_INT >= 24) {
+                NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                return nm == null || nm.areNotificationsEnabled();
+            }
+        } catch (Exception ignored) {
+        }
+        return true;
+    }
+
+    private String alarmDebugText() {
+        SharedPreferences p = getSharedPreferences(AlarmReceiver.DEBUG_PREF, MODE_PRIVATE);
+        DeviceStore.Device d = DeviceStore.getDefault(this);
+        StringBuilder sb = new StringBuilder();
+        sb.append("通知權限：").append(notificationsAllowed() ? "允許" : "可能被關閉").append("\n");
+        sb.append("預設設備：").append(d == null ? "無" : (d.name + " / " + d.type)).append("\n\n");
+        sb.append("最後排程：").append(fmtTime(p.getLong("last_schedule_wall", 0))).append("\n");
+        sb.append("排程延遲：").append(p.getLong("last_schedule_delay", 0) / 1000).append(" 秒\n");
+        sb.append("最後取消：").append(fmtTime(p.getLong("last_cancel_wall", 0))).append("\n");
+        sb.append("最後輪詢：").append(fmtTime(p.getLong("last_poll_wall", 0))).append("\n");
+        sb.append("來源：").append(p.getString("last_source", "")).append("\n");
+        sb.append("網址：").append(p.getString("last_url", "")).append("\n");
+        sb.append("結果：").append(p.getBoolean("last_alarm", false) ? "alarm=true" : "alarm=false").append("\n");
+        sb.append("code：").append(p.getString("last_code", "")).append("\n");
+        sb.append("msg：").append(p.getString("last_msg", "")).append("\n");
+        sb.append("錯誤：").append(p.getString("last_error", "")).append("\n\n");
+        sb.append("最後通知：").append(fmtTime(p.getLong("last_notify_wall", 0))).append("\n");
+        sb.append("通知標題：").append(p.getString("last_notify_title", "")).append("\n");
+        sb.append("通知內容：").append(p.getString("last_notify_text", "")).append("\n\n");
+        sb.append("最後回傳：\n").append(p.getString("last_body", ""));
+        return sb.toString();
+    }
+
+    private void showAlarmDebugDialog() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(12), dp(4), dp(12), 0);
+
+        TextView info = new TextView(this);
+        info.setText(alarmDebugText());
+        info.setTextSize(14);
+        info.setTextColor(Color.rgb(38, 50, 64));
+        info.setPadding(0, 0, 0, dp(8));
+        panel.addView(info);
+
+        Button manual = new Button(this);
+        manual.setText("立即檢查 /api/alarm");
+        manual.setOnClickListener(v -> new Thread(() -> {
+            String result = AlarmReceiver.runDebugCheckNow(this, true);
+            runOnUiThread(() -> {
+                info.setText(alarmDebugText() + "\n\n手動檢查結果：" + result);
+            });
+        }).start());
+        panel.addView(manual);
+
+        Button testNotify = new Button(this);
+        testNotify.setText("發送本機測試通知");
+        testNotify.setOnClickListener(v -> {
+            AlarmReceiver.showAlarmNotification(this, "SGRE 本機測試通知", "如果看到這則通知，代表 Android 通知權限正常。");
+            info.setText(alarmDebugText());
+        });
+        panel.addView(testNotify);
+
+        Button schedule = new Button(this);
+        schedule.setText("排程 60 秒後背景檢查");
+        schedule.setOnClickListener(v -> {
+            AlarmReceiver.scheduleNext(this, 60000L);
+            info.setText(alarmDebugText());
+        });
+        panel.addView(schedule);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(panel);
+
+        new AlertDialog.Builder(this)
+                .setTitle("警報監控除錯")
+                .setView(scroll)
+                .setPositiveButton("重新整理", (dialog, which) -> showAlarmDebugDialog())
+                .setNegativeButton("關閉", null)
+                .show();
+    }
 
     private void renderDevices() {
         if (listLayout == null) return;
