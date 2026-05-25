@@ -15,8 +15,11 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.net.Uri;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.Window;
 import android.widget.ArrayAdapter;
@@ -144,6 +147,28 @@ public class MainActivity extends Activity {
         title.setTextSize(21);
         title.setTypeface(null, Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
+        title.setOnTouchListener(new View.OnTouchListener() {
+            private final Handler handler = new Handler(Looper.getMainLooper());
+            private boolean fired = false;
+            private final Runnable openDebug = () -> {
+                fired = true;
+                showAlarmDebugDialog();
+            };
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    fired = false;
+                    handler.postDelayed(openDebug, 3000);
+                    return true;
+                }
+                if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                    handler.removeCallbacks(openDebug);
+                    return fired;
+                }
+                return true;
+            }
+        });
         header.addView(title, new LinearLayout.LayoutParams(0, dp(46), 1));
 
         TextView plus = new TextView(this);
@@ -172,13 +197,12 @@ public class MainActivity extends Activity {
     private void showQuickActionDialog() {
         new AlertDialog.Builder(this)
                 .setTitle("設備管理")
-                .setItems(new String[]{"新增設備", "搜尋區網", "導出設備", "匯入設備檔案", "貼上匯入", "警報除錯"}, (dialog, which) -> {
+                .setItems(new String[]{"新增設備", "搜尋區網", "導出設備", "匯入設備檔案", "貼上匯入"}, (dialog, which) -> {
                     if (which == 0) showDeviceDialog(null);
                     if (which == 1) startActivity(new Intent(this, ScanActivity.class));
                     if (which == 2) showExportDevicesDialog();
                     if (which == 3) openImportFilePicker();
                     if (which == 4) showImportDevicesDialog();
-                    if (which == 5) showAlarmDebugDialog();
                 })
                 .show();
     }
@@ -482,29 +506,6 @@ public class MainActivity extends Activity {
 
         box.addView(grid);
 
-        LinearLayout bottom = new LinearLayout(this);
-        bottom.setOrientation(LinearLayout.HORIZONTAL);
-        bottom.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView url = new TextView(this);
-        url.setText("連線檢查中...");
-        url.setTextColor(Color.rgb(120, 130, 135));
-        url.setTextSize(15);
-        url.setTypeface(null, Typeface.BOLD);
-        url.setIncludeFontPadding(false);
-        url.setSingleLine(true);
-        bottom.addView(url, new LinearLayout.LayoutParams(0, -2, 1));
-
-        TextView arrow = new TextView(this);
-        arrow.setText("›");
-        arrow.setTextSize(34);
-        arrow.setIncludeFontPadding(false);
-        arrow.setTextColor(Color.rgb(185, 195, 204));
-        arrow.setGravity(Gravity.CENTER);
-        bottom.addView(arrow, new LinearLayout.LayoutParams(dp(42), dp(42)));
-
-        box.addView(bottom);
-
         box.setOnClickListener(v -> openDevice(d));
         box.setOnLongClickListener(v -> {
             showDeviceActionDialog(d);
@@ -515,7 +516,7 @@ public class MainActivity extends Activity {
         lp.setMargins(0, 0, 0, dp(12));
         listLayout.addView(box, lp);
 
-        fetchSummary(d, box, voltage, power, energy, load, url);
+        fetchSummary(d, box, voltage, power, energy, load, null);
     }
 
     private TextView metric(String label, String value) {
@@ -562,6 +563,15 @@ public class MainActivity extends Activity {
         return raw.replace("http://", "").replace("https://", "");
     }
 
+    private String intText(String raw) {
+        try {
+            if (raw == null || raw.length() == 0) return "";
+            return String.valueOf(Math.round(Float.parseFloat(raw)));
+        } catch (Exception e) {
+            return raw == null ? "" : raw;
+        }
+    }
+
     private void fetchSummary(DeviceStore.Device d, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load, TextView urlLabel) {
         new Thread(() -> {
             boolean online = false;
@@ -590,7 +600,7 @@ public class MainActivity extends Activity {
                             num(alarm, "soc"),
                             num(alarm, "battSoc"));
                     if (battVolt.length() > 0) v = battVolt + "V";
-                    if (alarmSoc.length() > 0) e = alarmSoc + "%";
+                    if (alarmSoc.length() > 0) e = intText(alarmSoc) + "%";
                 }
 
                 String live = fetch((usingRemote ? remoteBase : localBase) + "/api/live", 1000, 1600);
@@ -622,9 +632,9 @@ public class MainActivity extends Activity {
                             liveVal(live, "v_load_percent_total"),
                             liveVal(live, "load_percent_total"),
                             liveVal(live, "v_load_pct"));
-                    if (pv.length() > 0) p = pv + "W";
-                    if (soc.length() > 0) e = soc + "%";
-                    if (loadPct.length() > 0) l = loadPct + "%";
+                    if (pv.length() > 0) p = intText(pv) + "W";
+                    if (soc.length() > 0) e = intText(soc) + "%";
+                    if (loadPct.length() > 0) l = intText(loadPct) + "%";
                 }
             } else {
                 String body = "";
@@ -666,7 +676,7 @@ public class MainActivity extends Activity {
                 setMetricText(power, "功率", fp);
                 setMetricText(energy, "電量", fe);
                 setMetricText(load, "負載", fl);
-                urlLabel.setText(furl);
+                if (urlLabel != null) urlLabel.setText(furl);
                 if (!ok) {
                     card.setAlpha(0.55f);
                     card.setBackground(bg(Color.rgb(210, 215, 222), 22));
