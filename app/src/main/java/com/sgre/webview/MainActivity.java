@@ -751,16 +751,14 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle(d.name)
                 .setMessage(info)
-                .setItems(new String[]{"編輯", "設為預設", "刪除"}, (dialog, which) -> {
-                    if (which == 0) showDeviceDialog(d);
-                    if (which == 1) {
-                        DeviceStore.setDefault(this, d.id);
-                        renderDevices();
-                    }
-                    if (which == 2) {
-                        DeviceStore.delete(this, d.id);
-                        renderDevices();
-                    }
+                .setPositiveButton("編輯", (dialog, which) -> showDeviceDialog(d))
+                .setNeutralButton("設為預設", (dialog, which) -> {
+                    DeviceStore.setDefault(this, d.id);
+                    renderDevices();
+                })
+                .setNegativeButton("刪除", (dialog, which) -> {
+                    DeviceStore.delete(this, d.id);
+                    renderDevices();
                 })
                 .show();
     }
