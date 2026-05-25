@@ -47,14 +47,14 @@ public class AlarmReceiver extends BroadcastReceiver {
             } else if (!"SGRE".equals(d.type)) {
                 error = "預設設備不是 SGRE：" + d.type;
             } else {
-                String localUrl = DeviceStore.normalize(d.localUrl) + "/api/alarm";
+                String localUrl = apiBase(d.localUrl) + "/api/alarm";
                 FetchResult local = fetchWithStatus(localUrl);
                 urlUsed = localUrl;
                 body = local.body;
                 error = local.error;
 
                 if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.length() > 0) {
-                    String remoteUrl = DeviceStore.normalize(d.remoteUrl) + "/api/alarm";
+                    String remoteUrl = apiBase(d.remoteUrl) + "/api/alarm";
                     FetchResult remote = fetchWithStatus(remoteUrl);
                     urlUsed = remoteUrl;
                     body = remote.body;
@@ -171,6 +171,21 @@ public class AlarmReceiver extends BroadcastReceiver {
     private static class FetchResult {
         String body = "";
         String error = "";
+    }
+
+
+    private static String apiBase(String raw) {
+        try {
+            String u = DeviceStore.normalize(raw);
+            if (u == null || u.length() == 0) return "";
+            int scheme = u.indexOf("://");
+            int start = scheme >= 0 ? scheme + 3 : 0;
+            int slash = u.indexOf("/", start);
+            if (slash > 0) return u.substring(0, slash);
+            return u;
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private static FetchResult fetchWithStatus(String urlText) {
