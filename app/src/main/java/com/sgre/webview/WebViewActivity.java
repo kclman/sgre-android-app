@@ -100,13 +100,14 @@ public class WebViewActivity extends Activity {
         try {
             currentUrlForInsets = url == null ? "" : url;
             String u = currentUrlForInsets.toLowerCase();
-            // V8：底部不再做全域留白，避免 SGRE / BMS / WEB 頁面底部出現大空白。
-            // /phone 上方本來正常不加 top；其他頁面只保留上方狀態列安全距離。
-            // 底部交由 Android WebView 可視區處理，讓最後資料貼近手機操作鍵上緣。
+            // V9：平衡版底部安全區。
+            // root 不做 bottom padding，避免整個 WebView 被推高形成大空白。
+            // 改由 CSS 對「非 /phone 頁面的可捲動內容」與「/phone 彈窗」補剛好的底部安全距離。
             boolean isPhonePage = u.contains("/phone");
             int top = isPhonePage ? 0 : Math.max(lastTopInset, getStatusBarHeight());
+            int bottom = Math.max(lastBottomInset, getNavigationBarHeight());
             rootLayout.setPadding(0, top, 0, 0);
-            injectSafeAreaCss(0);
+            injectSafeAreaCss(bottom, isPhonePage);
         } catch (Exception ignored) {
         }
     }
@@ -128,14 +129,26 @@ public class WebViewActivity extends Activity {
         }
     }
 
-    private void injectSafeAreaCss(int bottomPx) {
+    private void injectSafeAreaCss(int bottomPx, boolean isPhonePage) {
         if (webView == null || bottomPx < 0) return;
+        // 非 /phone：內容底部加剛好一個系統導航列高度，避免最後資料被三鍵列蓋住。
+        // /phone：主頁底部原本正常，不加 body padding；只保護彈窗底部按鈕。
+        String mode = isPhonePage ? "phone" : "web";
         String js = "(function(){try{"
-                + "var b='0px';"
+                + "var b='" + bottomPx + "px';"
+                + "var mode='" + mode + "';"
                 + "document.documentElement.style.setProperty('--sgre-app-bottom-inset',b);"
                 + "var s=document.getElementById('__sgre_app_safe_area_css__');"
                 + "if(!s){s=document.createElement('style');s.id='__sgre_app_safe_area_css__';document.head.appendChild(s);}"
-                + "s.textContent='html,body{box-sizing:border-box!important;} #auto-help-modal{box-sizing:border-box!important;}';"
+                + "var css='html,body{box-sizing:border-box!important;}';"
+                + "if(mode==='web'){"
+                + "css+='body{padding-bottom:var(--sgre-app-bottom-inset)!important;}';"
+                + "css+='[style*=\\\"position:fixed\\\"][style*=\\\"bottom\\\"],.bottom-nav,.bottom-bar,.tabbar,.navbar-bottom,.footer-fixed{margin-bottom:var(--sgre-app-bottom-inset)!important;}';"
+                + "}else{"
+                + "css+='#auto-help-modal,.modal,[role=dialog]{padding-bottom:var(--sgre-app-bottom-inset)!important;box-sizing:border-box!important;}';"
+                + "css+='#auto-help-modal button,.modal button,[role=dialog] button{margin-bottom:env(safe-area-inset-bottom,0px)!important;}';"
+                + "}"
+                + "s.textContent=css;"
                 + "var old=document.getElementById('__sgre_app_bottom_safe_spacer__');"
                 + "if(old&&old.parentNode){old.parentNode.removeChild(old);}"
                 + "}catch(e){}})();";
