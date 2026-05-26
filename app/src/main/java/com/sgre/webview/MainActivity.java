@@ -510,7 +510,7 @@ public class MainActivity extends Activity {
         grid.setPadding(0, dp(8), 0, dp(4));
 
         TextView power = metric("功率", "--", Color.rgb(255, 178, 45));
-        TextView energy = metric("發電量", "--", Color.rgb(76, 195, 112));
+        TextView energy = metric("SOC", "--", Color.rgb(76, 195, 112));
         TextView voltage = metric("電壓", "--", Color.rgb(87, 155, 255));
         TextView load = metric("負載", "--", Color.rgb(250, 103, 92));
 
@@ -559,7 +559,7 @@ public class MainActivity extends Activity {
         } else if ("可連線".equals(value)) {
             target.setText(value);
         } else {
-            String text = "● " + label + " " + value;
+            String text = "• " + label + " " + value;
             SpannableString s = new SpannableString(text);
             int dotColor = Color.rgb(76, 195, 112);
             Object tag = target.getTag();
@@ -695,19 +695,20 @@ public class MainActivity extends Activity {
                             liveVal(live, "pv_sum_power"),
                             liveVal(live, "v_pv_sum_power"));
 
-                    String todayPv = firstNonEmpty(
-                            liveVal(live, "v_today_pv_energy"),
-                            liveVal(live, "today_pv_energy"),
-                            liveVal(live, "v_pv_energy_today"),
-                            liveVal(live, "pv_energy_today"),
-                            liveVal(live, "v_pv_today_energy"),
-                            liveVal(live, "pv_today_energy"),
-                            liveVal(live, "v_pv_generat_energy_today"),
-                            liveVal(live, "pv_generat_energy_today"),
-                            liveVal(live, "PvGeneratEnergyToday"),
-                            liveVal(live, "CB4F"),
-                            liveVal(live, "v_cb4f"),
-                            liveVal(live, "cb4f"));
+                    String batterySoc = firstNonEmpty(
+                            liveVal(live, "v_battery_soc"),
+                            liveVal(live, "battery_soc"),
+                            liveVal(live, "v_batt_soc"),
+                            liveVal(live, "batt_soc"),
+                            liveVal(live, "v_soc"),
+                            liveVal(live, "soc"),
+                            liveVal(live, "SOC"),
+                            liveVal(live, "BattSoc"),
+                            liveVal(live, "v_batt_state_of_charge"),
+                            liveVal(live, "batt_state_of_charge"),
+                            liveVal(live, "state_of_charge"),
+                            liveVal(live, "7532"),
+                            liveVal(live, "v_7532"));
 
                     String battVoltLive = firstNonEmpty(
                             liveVal(live, "v_batt_voltage"),
@@ -751,7 +752,7 @@ public class MainActivity extends Activity {
                     String totalLoad = sumAbsNumbers(gridLoad, upsLoad);
 
                     if (pv.length() > 0) p = intText(pv) + "W";
-                    if (todayPv.length() > 0) e = oneDecimalText(todayPv) + "度";
+                    if (batterySoc.length() > 0) e = intText(batterySoc) + "%";
                     if (battVoltLive.length() > 0) v = oneDecimalText(battVoltLive) + "V";
                     if (totalLoad.length() > 0) l = intText(totalLoad) + "W";
                 }
@@ -792,7 +793,7 @@ public class MainActivity extends Activity {
 
             runOnUiThread(() -> {
                 setMetricText(power, "功率", fp);
-                setMetricText(energy, "發電量", fe);
+                setMetricText(energy, "SOC", fe);
                 setMetricText(voltage, "電壓", fv);
                 setMetricText(load, "負載", fl);
                 saveDeviceRuntime(d, ok ? furl : "目前連線：未連線");
