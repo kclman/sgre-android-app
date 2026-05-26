@@ -61,7 +61,7 @@ public class WebViewActivity extends Activity {
             boolean dark = isDarkMode();
             Window w = getWindow();
 
-            // V10：把手機原生狀態列 / 三鍵導航列視為 APP 禁區。
+            // V11：把手機原生狀態列 / 三鍵導航列視為 APP 禁區。
             // 不走 edge-to-edge，不讓 WebView 畫到導航列底下。
             if (Build.VERSION.SDK_INT >= 30) {
                 w.setDecorFitsSystemWindows(true);
@@ -115,12 +115,12 @@ public class WebViewActivity extends Activity {
             currentUrlForInsets = url == null ? "" : url;
             String u = currentUrlForInsets.toLowerCase();
 
-            // V10：Native 禁區法。
-            // 底部只用 Android WindowInsets / root padding 處理，不再改網頁 body padding。
-            // 目的：三鍵導航列是 APP 禁區，WebView 最底部貼著導航列上緣，不覆蓋、不大留白。
+            // V11：Native 系統列禁區法。
+            // 上方狀態列與下方三鍵/手勢列都交給 Android 原生當禁區。
+            // WebView 只畫在安全內容區；網頁 CSS 不補全域 body padding。
             boolean isPhonePage = u.contains("/phone");
-            int top = isPhonePage ? 0 : Math.max(lastTopInset, getStatusBarHeight());
 
+            int top = 0;
             int bottom = lastBottomInset;
             if (bottom <= 0 && Build.VERSION.SDK_INT < 30) {
                 bottom = getNavigationBarHeight();

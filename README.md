@@ -379,3 +379,16 @@ private static final String DEFAULT_URL = "http://192.168.31.201:81";
 - 保留自動化狀態修正、alarm_key 去重、恢復正常紀錄、隱藏警報除錯、卡片長按操作與四項選單。
 - 固定簽章保留，可覆蓋既有固定簽章版本。
 - 版本更新為 `1.0.37`。
+
+
+## V33 修改
+
+- 正式固定為「Native 系統列禁區法」。
+- Android Native：上方狀態列、下方三鍵/手勢導航列都當成 APP 禁區。
+- WebView：只畫在 Android 安全內容區，不再依 `/phone`、`/view` 額外補 top padding。
+- 網頁 CSS：不主動補全域 `body padding-bottom`，也不新增 spacer；只保留清理舊注入樣式的最小 CSS。
+- 保留 V10 的 `setDecorFitsSystemWindows(true)` 與 Android 15 `windowOptOutEdgeToEdgeEnforcement=true`。
+- 目標效果：所有 ESP / SGRE / Selpos BMS / 一般 WEB 頁面，上下都不與手機原生狀態列或導航列重疊，同時不產生大留白。
+- 保留自動化狀態修正、alarm_key 去重、恢復正常紀錄、隱藏警報除錯、卡片長按操作與四項選單。
+- 固定簽章保留，可覆蓋既有固定簽章版本。
+- 版本更新為 `1.0.38`。
