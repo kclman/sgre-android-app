@@ -38,6 +38,7 @@ public class AlarmReceiver extends BroadcastReceiver {
         boolean alarm = false;
         String msg = "";
         String code = "";
+        String alarmKey = "";
         long next = 60000L;
 
         try {
@@ -64,23 +65,55 @@ public class AlarmReceiver extends BroadcastReceiver {
                 alarm = body.contains("\"alarm\":true");
                 msg = str(body, "msg");
                 code = num(body, "code");
+                alarmKey = str(body, "alarm_key");
+                if (alarm && alarmKey.length() == 0) {
+                    alarmKey = "code_" + code + "_" + msg;
+                }
             }
+
+            // Stage V5：APK alarm_key 去重
+            // 同一 alarm_key 持續存在時不重複通知；恢復正常連續 2 次後清除狀態。
+            android.content.SharedPreferences sp = context.getSharedPreferences(DEBUG_PREF, Context.MODE_PRIVATE);
+            String lastKey = sp.getString("last_notify_alarm_key", "");
+            boolean lastActive = sp.getBoolean("last_alarm_active_state", false);
+            int normalSeen = sp.getInt("normal_seen_count", 0);
 
             if (alarm) {
                 next = 15000L;
-                if (notifyWhenAlarm) {
+                normalSeen = 0;
+                if (notifyWhenAlarm && alarmKey.length() > 0 && !alarmKey.equals(lastKey)) {
                     showAlarmNotification(context,
                             msg.length() == 0 ? "SGRE 警報" : msg,
                             "警報代碼：" + (code.length() == 0 ? "-" : code));
+                }
+                sp.edit()
+                        .putString("last_notify_alarm_key", alarmKey)
+                        .putBoolean("last_alarm_active_state", true)
+                        .putInt("normal_seen_count", normalSeen)
+                        .apply();
+            } else {
+                if (lastActive) {
+                    normalSeen++;
+                    if (normalSeen >= 2) {
+                        sp.edit()
+                                .putString("last_notify_alarm_key", "")
+                                .putBoolean("last_alarm_active_state", false)
+                                .putInt("normal_seen_count", 0)
+                                .putLong("last_recovery_wall", System.currentTimeMillis())
+                                .putString("last_recovery_msg", "警報已恢復正常")
+                                .apply();
+                    } else {
+                        sp.edit().putInt("normal_seen_count", normalSeen).apply();
+                    }
                 }
             }
         } catch (Exception e) {
             error = e.getClass().getSimpleName() + ": " + e.getMessage();
         }
 
-        saveDebug(context, source, started, urlUsed, body, error, alarm, msg, code, next);
+        saveDebug(context, source, started, urlUsed, body, error, alarm, msg, code, alarmKey, next);
         scheduleNext(context, next);
-        return alarm ? "alarm=true code=" + code + " msg=" + msg : "alarm=false " + (error.length() > 0 ? error : "正常");
+        return alarm ? "alarm=true code=" + code + " key=" + alarmKey + " msg=" + msg : "alarm=false " + (error.length() > 0 ? error : "正常");
     }
 
     public static void scheduleNext(Context context, long delayMs) {
@@ -225,7 +258,7 @@ public class AlarmReceiver extends BroadcastReceiver {
     }
 
     private static void saveDebug(Context context, String source, long started, String url, String body, String error,
-                                  boolean alarm, String msg, String code, long next) {
+                                  boolean alarm, String msg, String code, String alarmKey, long next) {
         String shortBody = body == null ? "" : body;
         if (shortBody.length() > 600) shortBody = shortBody.substring(0, 600);
         context.getSharedPreferences(DEBUG_PREF, Context.MODE_PRIVATE).edit()
@@ -238,6 +271,7 @@ public class AlarmReceiver extends BroadcastReceiver {
                 .putBoolean("last_alarm", alarm)
                 .putString("last_msg", msg == null ? "" : msg)
                 .putString("last_code", code == null ? "" : code)
+                .putString("last_alarm_key", alarmKey == null ? "" : alarmKey)
                 .putLong("last_next_delay", next)
                 .apply();
     }

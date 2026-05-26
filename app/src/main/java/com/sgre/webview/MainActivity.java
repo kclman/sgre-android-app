@@ -373,8 +373,11 @@ public class MainActivity extends Activity {
         sb.append("網址：").append(p.getString("last_url", "")).append("\n");
         sb.append("結果：").append(p.getBoolean("last_alarm", false) ? "alarm=true" : "alarm=false").append("\n");
         sb.append("code：").append(p.getString("last_code", "")).append("\n");
+        sb.append("alarm key：").append(p.getString("last_alarm_key", "")).append("\n");
         sb.append("msg：").append(p.getString("last_msg", "")).append("\n");
-        sb.append("錯誤：").append(p.getString("last_error", "")).append("\n\n");
+        sb.append("錯誤：").append(p.getString("last_error", "")).append("\n");
+        sb.append("最後恢復：").append(fmtTime(p.getLong("last_recovery_wall", 0))).append("\n");
+        sb.append("恢復訊息：").append(p.getString("last_recovery_msg", "")).append("\n\n");
         sb.append("最後通知：").append(fmtTime(p.getLong("last_notify_wall", 0))).append("\n");
         sb.append("通知標題：").append(p.getString("last_notify_title", "")).append("\n");
         sb.append("通知內容：").append(p.getString("last_notify_text", "")).append("\n\n");

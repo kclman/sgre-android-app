@@ -78,14 +78,26 @@ public class WebViewActivity extends Activity {
         return result;
     }
 
+    private int getNavigationBarHeight() {
+        int result = 0;
+        try {
+            int resId = getResources().getIdentifier("navigation_bar_height", "dimen", "android");
+            if (resId > 0) result = getResources().getDimensionPixelSize(resId);
+        } catch (Exception ignored) {
+        }
+        return result;
+    }
+
     private void applyViewInsetForUrl(String url) {
         if (rootLayout == null) return;
         try {
             String u = url == null ? "" : url.toLowerCase();
-            // App 內所有新增設備預設避開系統狀態列；已針對手機版最佳化的 /phone 例外。
+            // /phone 已由 ESP 手機版自行處理上下安全區，維持不額外 padding。
+            // 其他新增 ESP / WEB / BMS 頁面統一避開手機原生上方狀態列與下方導航列。
             boolean isPhonePage = u.contains("/phone");
             int top = isPhonePage ? 0 : getStatusBarHeight();
-            rootLayout.setPadding(0, top, 0, 0);
+            int bottom = isPhonePage ? 0 : getNavigationBarHeight();
+            rootLayout.setPadding(0, top, 0, bottom);
         } catch (Exception ignored) {
         }
     }
