@@ -367,3 +367,15 @@ private static final String DEFAULT_URL = "http://192.168.31.201:81";
 - 保留自動化狀態修正、alarm_key 去重、恢復正常紀錄、隱藏警報除錯、卡片長按操作與四項選單。
 - 固定簽章保留，可覆蓋既有固定簽章版本。
 - 版本更新為 `1.0.36`。
+
+
+## V32 修改
+
+- 重新設計底部安全區為「Native 禁區法」：手機三鍵/手勢導航列由 Android WindowInsets + rootLayout bottom padding 處理。
+- 不再注入網頁 body padding-bottom、不再新增 spacer，避免 V7 大留白與 V9 部分頁面仍覆蓋並存的問題。
+- Android 15 / targetSdk 35 加入 `windowOptOutEdgeToEdgeEnforcement=true`，並在程式內呼叫 `setDecorFitsSystemWindows(true)`，盡量讓系統列成為 APP 禁區。
+- `/phone` 上方仍不加 top；非 `/phone` 頁面保留上方狀態列安全距離。
+- 目標效果：最後資料貼近手機操作按鈕上緣，但不進入三鍵導航列。
+- 保留自動化狀態修正、alarm_key 去重、恢復正常紀錄、隱藏警報除錯、卡片長按操作與四項選單。
+- 固定簽章保留，可覆蓋既有固定簽章版本。
+- 版本更新為 `1.0.37`。

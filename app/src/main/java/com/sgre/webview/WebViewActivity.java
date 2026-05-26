@@ -60,12 +60,26 @@ public class WebViewActivity extends Activity {
         try {
             boolean dark = isDarkMode();
             Window w = getWindow();
+
+            // V10：把手機原生狀態列 / 三鍵導航列視為 APP 禁區。
+            // 不走 edge-to-edge，不讓 WebView 畫到導航列底下。
+            if (Build.VERSION.SDK_INT >= 30) {
+                w.setDecorFitsSystemWindows(true);
+            }
+
             if (Build.VERSION.SDK_INT >= 21) {
                 w.setStatusBarColor(dark ? Color.rgb(17, 24, 39) : Color.WHITE);
                 w.setNavigationBarColor(dark ? Color.rgb(17, 24, 39) : Color.rgb(243, 244, 246));
             }
+            if (Build.VERSION.SDK_INT >= 29) {
+                w.setNavigationBarContrastEnforced(true);
+            }
             if (Build.VERSION.SDK_INT >= 23) {
-                w.getDecorView().setSystemUiVisibility(dark ? 0 : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+                int flags = dark ? 0 : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                if (!dark && Build.VERSION.SDK_INT >= 26) {
+                    flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                }
+                w.getDecorView().setSystemUiVisibility(flags);
             }
         } catch (Exception ignored) {
         }
@@ -100,14 +114,21 @@ public class WebViewActivity extends Activity {
         try {
             currentUrlForInsets = url == null ? "" : url;
             String u = currentUrlForInsets.toLowerCase();
-            // V9：平衡版底部安全區。
-            // root 不做 bottom padding，避免整個 WebView 被推高形成大空白。
-            // 改由 CSS 對「非 /phone 頁面的可捲動內容」與「/phone 彈窗」補剛好的底部安全距離。
+
+            // V10：Native 禁區法。
+            // 底部只用 Android WindowInsets / root padding 處理，不再改網頁 body padding。
+            // 目的：三鍵導航列是 APP 禁區，WebView 最底部貼著導航列上緣，不覆蓋、不大留白。
             boolean isPhonePage = u.contains("/phone");
             int top = isPhonePage ? 0 : Math.max(lastTopInset, getStatusBarHeight());
-            int bottom = Math.max(lastBottomInset, getNavigationBarHeight());
-            rootLayout.setPadding(0, top, 0, 0);
-            injectSafeAreaCss(bottom, isPhonePage);
+
+            int bottom = lastBottomInset;
+            if (bottom <= 0 && Build.VERSION.SDK_INT < 30) {
+                bottom = getNavigationBarHeight();
+            }
+            if (bottom < 0) bottom = 0;
+
+            rootLayout.setPadding(0, top, 0, bottom);
+            injectSafeAreaCss(0, isPhonePage);
         } catch (Exception ignored) {
         }
     }
@@ -130,25 +151,14 @@ public class WebViewActivity extends Activity {
     }
 
     private void injectSafeAreaCss(int bottomPx, boolean isPhonePage) {
-        if (webView == null || bottomPx < 0) return;
-        // 非 /phone：內容底部加剛好一個系統導航列高度，避免最後資料被三鍵列蓋住。
-        // /phone：主頁底部原本正常，不加 body padding；只保護彈窗底部按鈕。
-        String mode = isPhonePage ? "phone" : "web";
+        if (webView == null) return;
+        // V10：Web 頁面不再注入底部 padding，避免不同頁面重複計算造成大空白或覆蓋。
+        // 底部禁區統一由 rootLayout padding / Android WindowInsets 處理。
         String js = "(function(){try{"
-                + "var b='" + bottomPx + "px';"
-                + "var mode='" + mode + "';"
-                + "document.documentElement.style.setProperty('--sgre-app-bottom-inset',b);"
+                + "document.documentElement.style.setProperty('--sgre-app-bottom-inset','0px');"
                 + "var s=document.getElementById('__sgre_app_safe_area_css__');"
                 + "if(!s){s=document.createElement('style');s.id='__sgre_app_safe_area_css__';document.head.appendChild(s);}"
-                + "var css='html,body{box-sizing:border-box!important;}';"
-                + "if(mode==='web'){"
-                + "css+='body{padding-bottom:var(--sgre-app-bottom-inset)!important;}';"
-                + "css+='[style*=\\\"position:fixed\\\"][style*=\\\"bottom\\\"],.bottom-nav,.bottom-bar,.tabbar,.navbar-bottom,.footer-fixed{margin-bottom:var(--sgre-app-bottom-inset)!important;}';"
-                + "}else{"
-                + "css+='#auto-help-modal,.modal,[role=dialog]{padding-bottom:var(--sgre-app-bottom-inset)!important;box-sizing:border-box!important;}';"
-                + "css+='#auto-help-modal button,.modal button,[role=dialog] button{margin-bottom:env(safe-area-inset-bottom,0px)!important;}';"
-                + "}"
-                + "s.textContent=css;"
+                + "s.textContent='html,body{box-sizing:border-box!important;}';"
                 + "var old=document.getElementById('__sgre_app_bottom_safe_spacer__');"
                 + "if(old&&old.parentNode){old.parentNode.removeChild(old);}"
                 + "}catch(e){}})();";
