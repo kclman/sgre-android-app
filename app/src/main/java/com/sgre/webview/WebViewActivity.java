@@ -30,6 +30,9 @@ public class WebViewActivity extends Activity {
     private DeviceStore.Device device;
     private boolean triedRemote = false;
     private HistoryBridge historyBridge;
+    private int lastTopInset = 0;
+    private int lastBottomInset = 0;
+    private String currentUrlForInsets = "";
 
     @Override
     protected void onCreate(Bundle b) {
@@ -68,6 +71,10 @@ public class WebViewActivity extends Activity {
         }
     }
 
+    private int dp(int v) {
+        return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
     private int getStatusBarHeight() {
         int result = 0;
         try {
@@ -91,20 +98,57 @@ public class WebViewActivity extends Activity {
     private void applyViewInsetForUrl(String url) {
         if (rootLayout == null) return;
         try {
-            String u = url == null ? "" : url.toLowerCase();
-            // /phone 已由 ESP 手機版自行處理上下安全區，維持不額外 padding。
-            // 其他新增 ESP / WEB / BMS 頁面統一避開手機原生上方狀態列與下方導航列。
+            currentUrlForInsets = url == null ? "" : url;
+            String u = currentUrlForInsets.toLowerCase();
+            // /phone 頁面本身上方已排好，不額外加 top；但底部必須由 APP 全域保護，
+            // 避免 Android 三鍵列/手勢列蓋住網頁、BMS 頁面、彈窗按鈕與未來新增 ESP 頁面。
             boolean isPhonePage = u.contains("/phone");
-            int top = isPhonePage ? 0 : getStatusBarHeight();
-            int bottom = isPhonePage ? 0 : getNavigationBarHeight();
+            int top = isPhonePage ? 0 : Math.max(lastTopInset, getStatusBarHeight());
+            int bottom = Math.max(lastBottomInset, getNavigationBarHeight()) + dp(10);
             rootLayout.setPadding(0, top, 0, bottom);
+            injectSafeAreaCss(bottom);
         } catch (Exception ignored) {
+        }
+    }
+
+    private void installInsetListener() {
+        if (rootLayout == null || Build.VERSION.SDK_INT < 20) return;
+        try {
+            rootLayout.setOnApplyWindowInsetsListener((v, insets) -> {
+                try {
+                    lastTopInset = insets.getSystemWindowInsetTop();
+                    lastBottomInset = insets.getSystemWindowInsetBottom();
+                    applyViewInsetForUrl(currentUrlForInsets);
+                } catch (Exception ignored) {
+                }
+                return insets;
+            });
+            rootLayout.requestApplyInsets();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void injectSafeAreaCss(int bottomPx) {
+        if (webView == null || bottomPx < 0) return;
+        String js = "(function(){try{"
+                + "var b='" + bottomPx + "px';"
+                + "document.documentElement.style.setProperty('--sgre-app-bottom-inset',b);"
+                + "var s=document.getElementById('__sgre_app_safe_area_css__');"
+                + "if(!s){s=document.createElement('style');s.id='__sgre_app_safe_area_css__';document.head.appendChild(s);}"
+                + "s.textContent='html,body{box-sizing:border-box!important;}body{padding-bottom:var(--sgre-app-bottom-inset)!important;} #auto-help-modal{padding-bottom:var(--sgre-app-bottom-inset)!important;box-sizing:border-box!important;} .sgre-app-bottom-safe{height:var(--sgre-app-bottom-inset)!important;min-height:var(--sgre-app-bottom-inset)!important;}';"
+                + "if(!document.getElementById('__sgre_app_bottom_safe_spacer__')){var d=document.createElement('div');d.id='__sgre_app_bottom_safe_spacer__';d.className='sgre-app-bottom-safe';document.body.appendChild(d);}"
+                + "}catch(e){}})();";
+        if (Build.VERSION.SDK_INT >= 19) {
+            webView.evaluateJavascript(js, null);
+        } else {
+            webView.loadUrl("javascript:" + js);
         }
     }
 
     private void buildWebView() {
         rootLayout = new FrameLayout(this);
         rootLayout.setBackgroundColor(isDarkMode() ? Color.rgb(17, 24, 39) : Color.WHITE);
+        installInsetListener();
 
         webView = new WebView(this);
         WebSettings s = webView.getSettings();
@@ -161,6 +205,9 @@ public class WebViewActivity extends Activity {
         rootLayout.addView(loadingText, new FrameLayout.LayoutParams(-1, -1));
 
         setContentView(rootLayout);
+        if (Build.VERSION.SDK_INT >= 20) {
+            try { rootLayout.requestApplyInsets(); } catch (Exception ignored) {}
+        }
     }
 
     private String safeDeviceKey() {

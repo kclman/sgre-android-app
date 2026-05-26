@@ -101,6 +101,16 @@ public class MainActivity extends Activity {
         return result;
     }
 
+    private int getNavigationBarHeight() {
+        int result = 0;
+        try {
+            int resId = getResources().getIdentifier("navigation_bar_height", "dimen", "android");
+            if (resId > 0) result = getResources().getDimensionPixelSize(resId);
+        } catch (Exception ignored) {
+        }
+        return result;
+    }
+
     private void requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= 33) {
             try {
@@ -186,7 +196,7 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         listLayout = new LinearLayout(this);
         listLayout.setOrientation(LinearLayout.VERTICAL);
-        listLayout.setPadding(dp(14), dp(8), dp(14), dp(20));
+        listLayout.setPadding(dp(14), dp(8), dp(14), getNavigationBarHeight() + dp(24));
         scroll.addView(listLayout);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
