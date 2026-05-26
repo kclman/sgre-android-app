@@ -460,61 +460,65 @@ public class MainActivity extends Activity {
             return;
         }
 
+        GridLayout deviceGrid = new GridLayout(this);
+        deviceGrid.setColumnCount(2);
+        deviceGrid.setUseDefaultMargins(false);
+        listLayout.addView(deviceGrid, new LinearLayout.LayoutParams(-1, -2));
+
         for (DeviceStore.Device d : devices) {
-            addDeviceCard(d);
+            addDeviceCard(d, deviceGrid);
         }
     }
 
-    private void addDeviceCard(DeviceStore.Device d) {
+    private void addDeviceCard(DeviceStore.Device d, GridLayout parent) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        // Compact card layout: keep the device list dense like the earlier working version.
-        box.setPadding(dp(12), dp(10), dp(12), dp(10));
-        box.setBackground(bg(Color.rgb(248, 250, 252), 22));
+        box.setPadding(dp(10), dp(10), dp(10), dp(10));
+        box.setBackground(bg(Color.rgb(248, 250, 252), 18));
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
+        TextView icon = new TextView(this);
+        icon.setText("▣");
+        icon.setTextColor(Color.rgb(52, 211, 153));
+        icon.setTextSize(16);
+        icon.setTypeface(null, Typeface.BOLD);
+        icon.setGravity(Gravity.CENTER);
+        row.addView(icon, new LinearLayout.LayoutParams(dp(20), dp(24)));
+
         TextView name = new TextView(this);
         name.setText(d.name.length() > 0 ? d.name : "未命名設備");
         name.setTextColor(Color.rgb(42, 54, 68));
-        name.setTextSize(22);
+        name.setTextSize(17);
         name.setIncludeFontPadding(false);
         name.setTypeface(null, Typeface.BOLD);
         name.setSingleLine(true);
-        row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(0, -2, 1);
+        nameLp.setMargins(dp(4), 0, dp(4), 0);
+        row.addView(name, nameLp);
 
-        CheckBox def = new CheckBox(this);
-        def.setChecked(d.isDefault);
-        def.setText("預設");
-        def.setTextSize(14);
-        def.setIncludeFontPadding(false);
-        def.setOnClickListener(v -> {
-            if (((CheckBox) v).isChecked()) {
-                DeviceStore.setDefault(this, d.id);
-            } else {
-                DeviceStore.clearDefault(this);
-            }
-            renderDevices();
-        });
-        row.addView(def);
+        TextView def = new TextView(this);
+        def.setText(d.isDefault ? "✓" : "");
+        def.setTextColor(Color.WHITE);
+        def.setTextSize(13);
+        def.setTypeface(null, Typeface.BOLD);
+        def.setGravity(Gravity.CENTER);
+        def.setBackground(bg(d.isDefault ? Color.rgb(16, 128, 105) : Color.TRANSPARENT, 8));
+        row.addView(def, new LinearLayout.LayoutParams(dp(22), dp(22)));
 
         box.addView(row);
 
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(2);
-        grid.setPadding(0, dp(8), 0, dp(4));
+        grid.setPadding(0, dp(8), 0, 0);
 
-        TextView voltage = metric("電壓", "--");
-        TextView power = metric("功率", "--");
-        TextView energy = metric("電量", "--");
-        TextView load = metric("負載", "--");
-
-        grid.addView(voltage);
-        grid.addView(power);
-        grid.addView(energy);
-        grid.addView(load);
+        TextView power = metric(grid, "功率", Color.rgb(59, 130, 246));
+        TextView energy = metric(grid, "發電量", Color.rgb(245, 158, 11));
+        TextView voltage = metric(grid, "電壓", Color.rgb(16, 185, 129));
+        TextView load = metric(grid, "負載", Color.rgb(249, 115, 22));
 
         box.addView(grid);
 
@@ -524,38 +528,68 @@ public class MainActivity extends Activity {
             return true;
         });
 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, 0, 0, dp(12));
-        listLayout.addView(box, lp);
-
-        fetchSummary(d, box, voltage, power, energy, load, null);
-    }
-
-    private TextView metric(String label, String value) {
-        TextView t = new TextView(this);
-        setMetricText(t, label, value);
-        t.setTextColor(Color.rgb(58, 70, 84));
-        t.setTextSize(16);
-        t.setTypeface(null, Typeface.BOLD);
-        t.setIncludeFontPadding(false);
-        t.setSingleLine(true);
-        t.setPadding(dp(2), dp(2), dp(3), dp(2));
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
         lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
         lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
-        lp.setMargins(0, 0, dp(4), dp(5));
-        t.setLayoutParams(lp);
-        return t;
+        lp.setMargins(dp(5), dp(5), dp(5), dp(10));
+        parent.addView(box, lp);
+
+        fetchSummary(d, box, voltage, power, energy, load, null);
+    }
+
+    private TextView metric(GridLayout parent, String label, int dotColor) {
+        LinearLayout cell = new LinearLayout(this);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        cell.setPadding(dp(1), dp(1), dp(1), dp(3));
+        GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+        lp.width = 0;
+        lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
+        lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
+        lp.setMargins(0, 0, dp(4), dp(7));
+        cell.setLayoutParams(lp);
+
+        LinearLayout labelRow = new LinearLayout(this);
+        labelRow.setOrientation(LinearLayout.HORIZONTAL);
+        labelRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView dot = new TextView(this);
+        dot.setText("●");
+        dot.setTextSize(9);
+        dot.setIncludeFontPadding(false);
+        dot.setTextColor(dotColor);
+        labelRow.addView(dot, new LinearLayout.LayoutParams(dp(12), -2));
+
+        TextView lab = new TextView(this);
+        lab.setText(label);
+        lab.setTextColor(Color.rgb(54, 64, 78));
+        lab.setTextSize(14);
+        lab.setTypeface(null, Typeface.BOLD);
+        lab.setIncludeFontPadding(false);
+        lab.setSingleLine(true);
+        labelRow.addView(lab, new LinearLayout.LayoutParams(0, -2, 1));
+
+        cell.addView(labelRow);
+
+        TextView value = new TextView(this);
+        value.setText("--");
+        value.setTextColor(Color.rgb(73, 82, 96));
+        value.setTextSize(17);
+        value.setTypeface(null, Typeface.BOLD);
+        value.setIncludeFontPadding(false);
+        value.setSingleLine(true);
+        value.setPadding(dp(12), dp(3), 0, 0);
+        cell.addView(value, new LinearLayout.LayoutParams(-1, -2));
+        parent.addView(cell);
+
+        return value;
     }
 
     private void setMetricText(TextView target, String label, String value) {
         if (value == null || value.length() == 0) {
-            target.setText("");
-        } else if ("可連線".equals(value)) {
-            target.setText(value);
+            target.setText("--");
         } else {
-            target.setText(label + " " + value);
+            target.setText(value);
         }
     }
 
@@ -581,6 +615,24 @@ public class MainActivity extends Activity {
             return String.valueOf(Math.round(Float.parseFloat(raw)));
         } catch (Exception e) {
             return raw == null ? "" : raw;
+        }
+    }
+
+    private String oneText(String raw) {
+        try {
+            if (raw == null || raw.length() == 0) return "";
+            return String.format(java.util.Locale.US, "%.1f", Float.parseFloat(raw));
+        } catch (Exception e) {
+            return raw == null ? "" : raw;
+        }
+    }
+
+    private float floatVal(String raw) {
+        try {
+            if (raw == null || raw.length() == 0) return 0f;
+            return Float.parseFloat(raw);
+        } catch (Exception e) {
+            return 0f;
         }
     }
 
@@ -631,13 +683,7 @@ public class MainActivity extends Activity {
                 if (alarm.length() > 0) {
                     online = true;
                     String battVolt = num(alarm, "batt_v");
-                    String alarmSoc = firstNonEmpty(
-                            num(alarm, "batt_soc"),
-                            num(alarm, "battery_soc"),
-                            num(alarm, "soc"),
-                            num(alarm, "battSoc"));
-                    if (battVolt.length() > 0) v = battVolt + "V";
-                    if (alarmSoc.length() > 0) e = intText(alarmSoc) + "%";
+                    if (battVolt.length() > 0) v = oneText(battVolt) + "V";
                 }
 
                 String live = fetch((usingRemote ? remoteBase : localBase) + "/api/live", 1000, 1600);
@@ -651,27 +697,46 @@ public class MainActivity extends Activity {
                 }
                 if (live.length() > 0) {
                     online = true;
-                    String pv = firstNonEmpty(
+                    String pvTotal = firstNonEmpty(
                             liveVal(live, "v_pv_total_power"),
                             liveVal(live, "pv_total_power"),
                             liveVal(live, "v_pv_power"));
-                    String soc = firstNonEmpty(
-                            liveVal(live, "v_batt_soc"),
-                            liveVal(live, "batt_soc"),
-                            liveVal(live, "s_batt_soc"),
-                            liveVal(live, "v_battery_soc"),
-                            liveVal(live, "battery_soc"),
-                            liveVal(live, "battery_percent"),
-                            liveVal(live, "b_soc"),
-                            liveVal(live, "soc"),
-                            liveVal(live, "v_soc"));
-                    String loadPct = firstNonEmpty(
-                            liveVal(live, "v_load_percent_total"),
-                            liveVal(live, "load_percent_total"),
-                            liveVal(live, "v_load_pct"));
-                    if (pv.length() > 0) p = intText(pv) + "W";
-                    if (soc.length() > 0) e = intText(soc) + "%";
-                    if (loadPct.length() > 0) l = intText(loadPct) + "%";
+                    String pv1 = liveVal(live, "d_pv1_power");
+                    String pv2 = liveVal(live, "d_pv2_power");
+                    String pvEnergy = firstNonEmpty(
+                            liveVal(live, "d_pv_energy_today"),
+                            liveVal(live, "pv_energy_today"),
+                            liveVal(live, "d_today_pv_energy"));
+                    String battVoltLive = firstNonEmpty(
+                            liveVal(live, "d_battery_voltage"),
+                            liveVal(live, "v_battery_voltage"),
+                            liveVal(live, "batt_v"));
+                    String gridTotal = firstNonEmpty(
+                            liveVal(live, "v_grid_total_power"),
+                            liveVal(live, "v_grid_total_power_ct_sum"));
+                    String gridA = firstNonEmpty(
+                            liveVal(live, "d_grid_in_a_power"),
+                            liveVal(live, "d_line_sum_power_a"));
+                    String gridB = firstNonEmpty(
+                            liveVal(live, "d_grid_in_b_power"),
+                            liveVal(live, "d_line_sum_power_b"));
+                    String upsTotal = liveVal(live, "v_ac_out_total_power");
+                    String upsA = firstNonEmpty(
+                            liveVal(live, "d_load_p_a"),
+                            liveVal(live, "d_ac_out_a_power"));
+                    String upsB = firstNonEmpty(
+                            liveVal(live, "d_load_p_b"),
+                            liveVal(live, "d_ac_out_b_power"));
+
+                    if (pvTotal.length() > 0) p = intText(pvTotal) + "W";
+                    else if (pv1.length() > 0 || pv2.length() > 0) p = intText(String.valueOf(floatVal(pv1) + floatVal(pv2))) + "W";
+                    if (pvEnergy.length() > 0) e = oneText(pvEnergy) + "度";
+                    if (battVoltLive.length() > 0) v = oneText(battVoltLive) + "V";
+                    if (gridTotal.length() > 0 || gridA.length() > 0 || gridB.length() > 0 || upsTotal.length() > 0 || upsA.length() > 0 || upsB.length() > 0) {
+                        float gridLoad = gridTotal.length() > 0 ? Math.abs(floatVal(gridTotal)) : (Math.abs(floatVal(gridA)) + Math.abs(floatVal(gridB)));
+                        float upsLoad = upsTotal.length() > 0 ? Math.abs(floatVal(upsTotal)) : (Math.abs(floatVal(upsA)) + Math.abs(floatVal(upsB)));
+                        l = intText(String.valueOf(gridLoad + upsLoad)) + "W";
+                    }
                 }
             } else {
                 String body = "";
@@ -717,10 +782,10 @@ public class MainActivity extends Activity {
                 if (urlLabel != null) urlLabel.setText("");
                 if (!ok) {
                     card.setAlpha(0.55f);
-                    card.setBackground(bg(Color.rgb(210, 215, 222), 22));
+                    card.setBackground(bg(Color.rgb(210, 215, 222), 18));
                 } else {
                     card.setAlpha(1f);
-                    card.setBackground(bg(Color.rgb(248, 250, 252), 22));
+                    card.setBackground(bg(Color.rgb(248, 250, 252), 18));
                 }
             });
         }).start();
