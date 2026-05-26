@@ -100,13 +100,13 @@ public class WebViewActivity extends Activity {
         try {
             currentUrlForInsets = url == null ? "" : url;
             String u = currentUrlForInsets.toLowerCase();
-            // /phone 頁面本身上方已排好，不額外加 top；但底部必須由 APP 全域保護，
-            // 避免 Android 三鍵列/手勢列蓋住網頁、BMS 頁面、彈窗按鈕與未來新增 ESP 頁面。
+            // V8：底部不再做全域留白，避免 SGRE / BMS / WEB 頁面底部出現大空白。
+            // /phone 上方本來正常不加 top；其他頁面只保留上方狀態列安全距離。
+            // 底部交由 Android WebView 可視區處理，讓最後資料貼近手機操作鍵上緣。
             boolean isPhonePage = u.contains("/phone");
             int top = isPhonePage ? 0 : Math.max(lastTopInset, getStatusBarHeight());
-            int bottom = Math.max(lastBottomInset, getNavigationBarHeight()) + dp(10);
-            rootLayout.setPadding(0, top, 0, bottom);
-            injectSafeAreaCss(bottom);
+            rootLayout.setPadding(0, top, 0, 0);
+            injectSafeAreaCss(0);
         } catch (Exception ignored) {
         }
     }
@@ -131,12 +131,13 @@ public class WebViewActivity extends Activity {
     private void injectSafeAreaCss(int bottomPx) {
         if (webView == null || bottomPx < 0) return;
         String js = "(function(){try{"
-                + "var b='" + bottomPx + "px';"
+                + "var b='0px';"
                 + "document.documentElement.style.setProperty('--sgre-app-bottom-inset',b);"
                 + "var s=document.getElementById('__sgre_app_safe_area_css__');"
                 + "if(!s){s=document.createElement('style');s.id='__sgre_app_safe_area_css__';document.head.appendChild(s);}"
-                + "s.textContent='html,body{box-sizing:border-box!important;}body{padding-bottom:var(--sgre-app-bottom-inset)!important;} #auto-help-modal{padding-bottom:var(--sgre-app-bottom-inset)!important;box-sizing:border-box!important;} .sgre-app-bottom-safe{height:var(--sgre-app-bottom-inset)!important;min-height:var(--sgre-app-bottom-inset)!important;}';"
-                + "if(!document.getElementById('__sgre_app_bottom_safe_spacer__')){var d=document.createElement('div');d.id='__sgre_app_bottom_safe_spacer__';d.className='sgre-app-bottom-safe';document.body.appendChild(d);}"
+                + "s.textContent='html,body{box-sizing:border-box!important;} #auto-help-modal{box-sizing:border-box!important;}';"
+                + "var old=document.getElementById('__sgre_app_bottom_safe_spacer__');"
+                + "if(old&&old.parentNode){old.parentNode.removeChild(old);}"
                 + "}catch(e){}})();";
         if (Build.VERSION.SDK_INT >= 19) {
             webView.evaluateJavascript(js, null);
