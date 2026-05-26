@@ -18,6 +18,9 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.net.Uri;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -460,65 +463,61 @@ public class MainActivity extends Activity {
             return;
         }
 
-        GridLayout deviceGrid = new GridLayout(this);
-        deviceGrid.setColumnCount(2);
-        deviceGrid.setUseDefaultMargins(false);
-        listLayout.addView(deviceGrid, new LinearLayout.LayoutParams(-1, -2));
-
         for (DeviceStore.Device d : devices) {
-            addDeviceCard(d, deviceGrid);
+            addDeviceCard(d);
         }
     }
 
-    private void addDeviceCard(DeviceStore.Device d, GridLayout parent) {
+    private void addDeviceCard(DeviceStore.Device d) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(10), dp(10), dp(10), dp(10));
-        box.setBackground(bg(Color.rgb(248, 250, 252), 18));
+        // Compact card layout: keep the device list dense like the earlier working version.
+        box.setPadding(dp(12), dp(10), dp(12), dp(10));
+        box.setBackground(bg(Color.rgb(248, 250, 252), 22));
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView icon = new TextView(this);
-        icon.setText("▣");
-        icon.setTextColor(Color.rgb(52, 211, 153));
-        icon.setTextSize(16);
-        icon.setTypeface(null, Typeface.BOLD);
-        icon.setGravity(Gravity.CENTER);
-        row.addView(icon, new LinearLayout.LayoutParams(dp(20), dp(24)));
-
         TextView name = new TextView(this);
         name.setText(d.name.length() > 0 ? d.name : "未命名設備");
         name.setTextColor(Color.rgb(42, 54, 68));
-        name.setTextSize(17);
+        name.setTextSize(22);
         name.setIncludeFontPadding(false);
         name.setTypeface(null, Typeface.BOLD);
         name.setSingleLine(true);
-        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(0, -2, 1);
-        nameLp.setMargins(dp(4), 0, dp(4), 0);
-        row.addView(name, nameLp);
+        row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView def = new TextView(this);
-        def.setText(d.isDefault ? "✓" : "");
-        def.setTextColor(Color.WHITE);
-        def.setTextSize(13);
-        def.setTypeface(null, Typeface.BOLD);
-        def.setGravity(Gravity.CENTER);
-        def.setBackground(bg(d.isDefault ? Color.rgb(16, 128, 105) : Color.TRANSPARENT, 8));
-        row.addView(def, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        CheckBox def = new CheckBox(this);
+        def.setChecked(d.isDefault);
+        def.setText("預設");
+        def.setTextSize(14);
+        def.setIncludeFontPadding(false);
+        def.setOnClickListener(v -> {
+            if (((CheckBox) v).isChecked()) {
+                DeviceStore.setDefault(this, d.id);
+            } else {
+                DeviceStore.clearDefault(this);
+            }
+            renderDevices();
+        });
+        row.addView(def);
 
         box.addView(row);
 
         GridLayout grid = new GridLayout(this);
         grid.setColumnCount(2);
-        grid.setPadding(0, dp(8), 0, 0);
+        grid.setPadding(0, dp(8), 0, dp(4));
 
-        TextView power = metric(grid, "功率", Color.rgb(59, 130, 246));
-        TextView energy = metric(grid, "發電量", Color.rgb(245, 158, 11));
-        TextView voltage = metric(grid, "電壓", Color.rgb(16, 185, 129));
-        TextView load = metric(grid, "負載", Color.rgb(249, 115, 22));
+        TextView power = metric("功率", "--", Color.rgb(255, 178, 45));
+        TextView energy = metric("發電量", "--", Color.rgb(76, 195, 112));
+        TextView voltage = metric("電壓", "--", Color.rgb(87, 155, 255));
+        TextView load = metric("負載", "--", Color.rgb(250, 103, 92));
+
+        grid.addView(power);
+        grid.addView(energy);
+        grid.addView(voltage);
+        grid.addView(load);
 
         box.addView(grid);
 
@@ -528,68 +527,45 @@ public class MainActivity extends Activity {
             return true;
         });
 
-        GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
-        lp.width = 0;
-        lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
-        lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
-        lp.setMargins(dp(5), dp(5), dp(5), dp(10));
-        parent.addView(box, lp);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, 0, 0, dp(12));
+        listLayout.addView(box, lp);
 
         fetchSummary(d, box, voltage, power, energy, load, null);
     }
 
-    private TextView metric(GridLayout parent, String label, int dotColor) {
-        LinearLayout cell = new LinearLayout(this);
-        cell.setOrientation(LinearLayout.VERTICAL);
-        cell.setPadding(dp(1), dp(1), dp(1), dp(3));
+    private TextView metric(String label, String value, int dotColor) {
+        TextView t = new TextView(this);
+        t.setTag(Integer.valueOf(dotColor));
+        setMetricText(t, label, value);
+        t.setTextColor(Color.rgb(58, 70, 84));
+        t.setTextSize(15);
+        t.setTypeface(null, Typeface.BOLD);
+        t.setIncludeFontPadding(false);
+        t.setSingleLine(true);
+        t.setPadding(dp(2), dp(2), dp(3), dp(2));
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
         lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
         lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
-        lp.setMargins(0, 0, dp(4), dp(7));
-        cell.setLayoutParams(lp);
-
-        LinearLayout labelRow = new LinearLayout(this);
-        labelRow.setOrientation(LinearLayout.HORIZONTAL);
-        labelRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView dot = new TextView(this);
-        dot.setText("●");
-        dot.setTextSize(9);
-        dot.setIncludeFontPadding(false);
-        dot.setTextColor(dotColor);
-        labelRow.addView(dot, new LinearLayout.LayoutParams(dp(12), -2));
-
-        TextView lab = new TextView(this);
-        lab.setText(label);
-        lab.setTextColor(Color.rgb(54, 64, 78));
-        lab.setTextSize(14);
-        lab.setTypeface(null, Typeface.BOLD);
-        lab.setIncludeFontPadding(false);
-        lab.setSingleLine(true);
-        labelRow.addView(lab, new LinearLayout.LayoutParams(0, -2, 1));
-
-        cell.addView(labelRow);
-
-        TextView value = new TextView(this);
-        value.setText("--");
-        value.setTextColor(Color.rgb(73, 82, 96));
-        value.setTextSize(17);
-        value.setTypeface(null, Typeface.BOLD);
-        value.setIncludeFontPadding(false);
-        value.setSingleLine(true);
-        value.setPadding(dp(12), dp(3), 0, 0);
-        cell.addView(value, new LinearLayout.LayoutParams(-1, -2));
-        parent.addView(cell);
-
-        return value;
+        lp.setMargins(0, 0, dp(4), dp(5));
+        t.setLayoutParams(lp);
+        return t;
     }
 
     private void setMetricText(TextView target, String label, String value) {
         if (value == null || value.length() == 0) {
-            target.setText("--");
-        } else {
+            target.setText("");
+        } else if ("可連線".equals(value)) {
             target.setText(value);
+        } else {
+            String text = "● " + label + " " + value;
+            SpannableString s = new SpannableString(text);
+            int dotColor = Color.rgb(76, 195, 112);
+            Object tag = target.getTag();
+            if (tag instanceof Integer) dotColor = (Integer) tag;
+            s.setSpan(new ForegroundColorSpan(dotColor), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            target.setText(s);
         }
     }
 
@@ -618,22 +594,35 @@ public class MainActivity extends Activity {
         }
     }
 
-    private String oneText(String raw) {
+    private String oneDecimalText(String raw) {
         try {
             if (raw == null || raw.length() == 0) return "";
-            return String.format(java.util.Locale.US, "%.1f", Float.parseFloat(raw));
+            float v = Float.parseFloat(raw);
+            if (Math.abs(v - Math.round(v)) < 0.05f) return String.valueOf(Math.round(v));
+            return String.format(java.util.Locale.US, "%.1f", v);
         } catch (Exception e) {
             return raw == null ? "" : raw;
         }
     }
 
-    private float floatVal(String raw) {
-        try {
-            if (raw == null || raw.length() == 0) return 0f;
-            return Float.parseFloat(raw);
-        } catch (Exception e) {
-            return 0f;
+    private float parseNumber(String raw) throws Exception {
+        if (raw == null || raw.length() == 0) throw new Exception("empty");
+        return Float.parseFloat(raw);
+    }
+
+    private String sumAbsNumbers(String... values) {
+        float sum = 0f;
+        boolean found = false;
+        for (String value : values) {
+            try {
+                if (value == null || value.length() == 0) continue;
+                sum += Math.abs(parseNumber(value));
+                found = true;
+            } catch (Exception ignored) {
+            }
         }
+        if (!found) return "";
+        return String.valueOf(sum);
     }
 
     private void saveDeviceRuntime(DeviceStore.Device d, String status) {
@@ -683,7 +672,7 @@ public class MainActivity extends Activity {
                 if (alarm.length() > 0) {
                     online = true;
                     String battVolt = num(alarm, "batt_v");
-                    if (battVolt.length() > 0) v = oneText(battVolt) + "V";
+                    if (battVolt.length() > 0) v = oneDecimalText(battVolt) + "V";
                 }
 
                 String live = fetch((usingRemote ? remoteBase : localBase) + "/api/live", 1000, 1600);
@@ -697,46 +686,74 @@ public class MainActivity extends Activity {
                 }
                 if (live.length() > 0) {
                     online = true;
-                    String pvTotal = firstNonEmpty(
+
+                    String pv = firstNonEmpty(
                             liveVal(live, "v_pv_total_power"),
                             liveVal(live, "pv_total_power"),
-                            liveVal(live, "v_pv_power"));
-                    String pv1 = liveVal(live, "d_pv1_power");
-                    String pv2 = liveVal(live, "d_pv2_power");
-                    String pvEnergy = firstNonEmpty(
-                            liveVal(live, "d_pv_energy_today"),
-                            liveVal(live, "pv_energy_today"),
-                            liveVal(live, "d_today_pv_energy"));
-                    String battVoltLive = firstNonEmpty(
-                            liveVal(live, "d_battery_voltage"),
-                            liveVal(live, "v_battery_voltage"),
-                            liveVal(live, "batt_v"));
-                    String gridTotal = firstNonEmpty(
-                            liveVal(live, "v_grid_total_power"),
-                            liveVal(live, "v_grid_total_power_ct_sum"));
-                    String gridA = firstNonEmpty(
-                            liveVal(live, "d_grid_in_a_power"),
-                            liveVal(live, "d_line_sum_power_a"));
-                    String gridB = firstNonEmpty(
-                            liveVal(live, "d_grid_in_b_power"),
-                            liveVal(live, "d_line_sum_power_b"));
-                    String upsTotal = liveVal(live, "v_ac_out_total_power");
-                    String upsA = firstNonEmpty(
-                            liveVal(live, "d_load_p_a"),
-                            liveVal(live, "d_ac_out_a_power"));
-                    String upsB = firstNonEmpty(
-                            liveVal(live, "d_load_p_b"),
-                            liveVal(live, "d_ac_out_b_power"));
+                            liveVal(live, "v_pv_power"),
+                            liveVal(live, "PV_Vsum"),
+                            liveVal(live, "pv_sum_power"),
+                            liveVal(live, "v_pv_sum_power"));
 
-                    if (pvTotal.length() > 0) p = intText(pvTotal) + "W";
-                    else if (pv1.length() > 0 || pv2.length() > 0) p = intText(String.valueOf(floatVal(pv1) + floatVal(pv2))) + "W";
-                    if (pvEnergy.length() > 0) e = oneText(pvEnergy) + "度";
-                    if (battVoltLive.length() > 0) v = oneText(battVoltLive) + "V";
-                    if (gridTotal.length() > 0 || gridA.length() > 0 || gridB.length() > 0 || upsTotal.length() > 0 || upsA.length() > 0 || upsB.length() > 0) {
-                        float gridLoad = gridTotal.length() > 0 ? Math.abs(floatVal(gridTotal)) : (Math.abs(floatVal(gridA)) + Math.abs(floatVal(gridB)));
-                        float upsLoad = upsTotal.length() > 0 ? Math.abs(floatVal(upsTotal)) : (Math.abs(floatVal(upsA)) + Math.abs(floatVal(upsB)));
-                        l = intText(String.valueOf(gridLoad + upsLoad)) + "W";
-                    }
+                    String todayPv = firstNonEmpty(
+                            liveVal(live, "v_today_pv_energy"),
+                            liveVal(live, "today_pv_energy"),
+                            liveVal(live, "v_pv_energy_today"),
+                            liveVal(live, "pv_energy_today"),
+                            liveVal(live, "v_pv_today_energy"),
+                            liveVal(live, "pv_today_energy"),
+                            liveVal(live, "v_pv_generat_energy_today"),
+                            liveVal(live, "pv_generat_energy_today"),
+                            liveVal(live, "PvGeneratEnergyToday"),
+                            liveVal(live, "CB4F"),
+                            liveVal(live, "v_cb4f"),
+                            liveVal(live, "cb4f"));
+
+                    String battVoltLive = firstNonEmpty(
+                            liveVal(live, "v_batt_voltage"),
+                            liveVal(live, "batt_voltage"),
+                            liveVal(live, "v_battery_voltage"),
+                            liveVal(live, "battery_voltage"),
+                            liveVal(live, "v_batt_v"),
+                            liveVal(live, "batt_v"),
+                            liveVal(live, "BattVolt"),
+                            liveVal(live, "7530"),
+                            liveVal(live, "v_7530"));
+
+                    String upsLoad = firstNonEmpty(
+                            liveVal(live, "v_ac_out_sum"),
+                            liveVal(live, "ac_out_sum"),
+                            liveVal(live, "AC_Out_Sum"),
+                            liveVal(live, "v_output_total_power"),
+                            liveVal(live, "output_total_power"),
+                            liveVal(live, "v_out_total_power"),
+                            liveVal(live, "out_total_power"),
+                            liveVal(live, "v_backup_load_power"),
+                            liveVal(live, "backup_load_power"),
+                            liveVal(live, "v_ups_load_power"),
+                            liveVal(live, "ups_load_power"));
+
+                    String gridLoad = firstNonEmpty(
+                            liveVal(live, "v_grid_load_power"),
+                            liveVal(live, "grid_load_power"),
+                            liveVal(live, "v_normal_load_power"),
+                            liveVal(live, "normal_load_power"),
+                            liveVal(live, "v_ct_sum"),
+                            liveVal(live, "ct_sum"),
+                            liveVal(live, "CT_sum"),
+                            liveVal(live, "v_grid_total_power"),
+                            liveVal(live, "grid_total_power"),
+                            liveVal(live, "v_line_sum_power"),
+                            liveVal(live, "line_sum_power"),
+                            liveVal(live, "v_line_total_power"),
+                            liveVal(live, "line_total_power"));
+
+                    String totalLoad = sumAbsNumbers(gridLoad, upsLoad);
+
+                    if (pv.length() > 0) p = intText(pv) + "W";
+                    if (todayPv.length() > 0) e = oneDecimalText(todayPv) + "度";
+                    if (battVoltLive.length() > 0) v = oneDecimalText(battVoltLive) + "V";
+                    if (totalLoad.length() > 0) l = intText(totalLoad) + "W";
                 }
             } else {
                 String body = "";
@@ -774,18 +791,18 @@ public class MainActivity extends Activity {
             final String furl = activeUrlLabel;
 
             runOnUiThread(() -> {
-                setMetricText(voltage, "電壓", fv);
                 setMetricText(power, "功率", fp);
-                setMetricText(energy, "電量", fe);
+                setMetricText(energy, "發電量", fe);
+                setMetricText(voltage, "電壓", fv);
                 setMetricText(load, "負載", fl);
                 saveDeviceRuntime(d, ok ? furl : "目前連線：未連線");
                 if (urlLabel != null) urlLabel.setText("");
                 if (!ok) {
                     card.setAlpha(0.55f);
-                    card.setBackground(bg(Color.rgb(210, 215, 222), 18));
+                    card.setBackground(bg(Color.rgb(210, 215, 222), 22));
                 } else {
                     card.setAlpha(1f);
-                    card.setBackground(bg(Color.rgb(248, 250, 252), 18));
+                    card.setBackground(bg(Color.rgb(248, 250, 252), 22));
                 }
             });
         }).start();

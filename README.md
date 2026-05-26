@@ -399,3 +399,12 @@ private static final String DEFAULT_URL = "http://192.168.31.201:81";
 - 簡化自動化說明，移除 NVS / Flash 技術描述。
 - 「已觸發」標籤改成與「今日已執行」同色系，避免與刪除按鈕紅色混淆。
 - APP versionCode / versionName 維持不變。
+
+## 首頁設備卡片微調
+
+- 以本包 V11 / V33 Native system bars 版本為基礎。
+- 首頁仍維持一個設備一行卡片。
+- SGRE 設備卡片顯示：功率 / 發電量 / 電壓 / 負載。
+- 功率取 PV 發電功率，發電量取今天 PV 發電度數，電壓取電池電壓，負載取網側負載 + UPS 負載。
+- Selpos BMS 與一般不支援資料的 ESP / WEB 設備只顯示「可連線」。
+- APK versionCode / versionName 維持不變。
