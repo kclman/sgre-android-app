@@ -41,11 +41,43 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MainActivity extends Activity {
     private static final int REQ_IMPORT_DEVICES_FILE = 7101;
+    private static final long HOME_SGRE_REFRESH_MS = 10000L;
     private LinearLayout listLayout;
     private boolean autoOpened = false;
+    private boolean homeVisible = false;
+    private final Handler homeRefreshHandler = new Handler(Looper.getMainLooper());
+    private final Map<String, CardWidgets> cardWidgets = new HashMap<>();
+    private final Runnable homeRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!homeVisible) return;
+            refreshHomeSgreCards();
+            homeRefreshHandler.postDelayed(this, HOME_SGRE_REFRESH_MS);
+        }
+    };
+
+    private static class CardWidgets {
+        final DeviceStore.Device device;
+        final LinearLayout card;
+        final TextView voltage;
+        final TextView power;
+        final TextView energy;
+        final TextView load;
+
+        CardWidgets(DeviceStore.Device device, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load) {
+            this.device = device;
+            this.card = card;
+            this.voltage = voltage;
+            this.power = power;
+            this.energy = energy;
+            this.load = load;
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,11 +99,13 @@ public class MainActivity extends Activity {
         setupSystemBars();
         AlarmReceiver.cancel(this);
         buildHome();
+        startHomeRefresh();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        stopHomeRefresh();
         AlarmReceiver.scheduleNext(this, 60000L);
     }
 
@@ -205,6 +239,28 @@ public class MainActivity extends Activity {
 
         setContentView(root);
         renderDevices();
+    }
+
+    private void startHomeRefresh() {
+        homeVisible = true;
+        homeRefreshHandler.removeCallbacks(homeRefreshRunnable);
+        homeRefreshHandler.postDelayed(homeRefreshRunnable, HOME_SGRE_REFRESH_MS);
+    }
+
+    private void stopHomeRefresh() {
+        homeVisible = false;
+        homeRefreshHandler.removeCallbacks(homeRefreshRunnable);
+    }
+
+    private void refreshHomeSgreCards() {
+        if (listLayout == null) return;
+        List<DeviceStore.Device> devices = DeviceStore.load(this);
+        for (DeviceStore.Device d : devices) {
+            if (!"SGRE".equals(d.type)) continue;
+            CardWidgets w = cardWidgets.get(d.id);
+            if (w == null) continue;
+            fetchSummary(d, w.card, w.voltage, w.power, w.energy, w.load, null);
+        }
     }
 
     private void showQuickActionDialog() {
@@ -489,6 +545,7 @@ public class MainActivity extends Activity {
     private void renderDevices() {
         if (listLayout == null) return;
         listLayout.removeAllViews();
+        cardWidgets.clear();
 
         List<DeviceStore.Device> devices = DeviceStore.load(this);
         if (devices.isEmpty()) {
@@ -569,6 +626,9 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.setMargins(0, 0, 0, dp(12));
         listLayout.addView(box, lp);
+        if (d.id != null && d.id.length() > 0) {
+            cardWidgets.put(d.id, new CardWidgets(d, box, voltage, power, energy, load));
+        }
 
         fetchSummary(d, box, voltage, power, energy, load, null);
     }
