@@ -357,6 +357,28 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String alarmHistoryText() {
+        String h = AlarmReceiver.getHistory(this);
+        if (h == null || h.trim().length() == 0) return "尚無警報紀錄";
+        StringBuilder out = new StringBuilder();
+        String[] lines = h.split("\n");
+        for (String line : lines) {
+            String[] parts = line.split("｜", -1);
+            if (parts.length >= 4) {
+                long t = 0;
+                try { t = Long.parseLong(parts[0]); } catch (Exception ignored) {}
+                out.append(fmtTime(t)).append("  ").append(parts[1]).append("\n");
+                out.append(parts[2]).append("\n");
+                out.append(parts[3]);
+                if (parts.length >= 5 && parts[4].length() > 0) out.append("\n").append(parts[4]);
+                out.append("\n\n");
+            } else {
+                out.append(line).append("\n");
+            }
+        }
+        return out.toString().trim();
+    }
+
     private boolean notificationsAllowed() {
         try {
             if (Build.VERSION.SDK_INT >= 33 &&
@@ -398,7 +420,11 @@ public class MainActivity extends Activity {
         sb.append("恢復訊息：").append(p.getString("last_recovery_msg", "")).append("\n\n");
         sb.append("最後通知：").append(fmtTime(p.getLong("last_notify_wall", 0))).append("\n");
         sb.append("通知標題：").append(p.getString("last_notify_title", "")).append("\n");
-        sb.append("通知內容：").append(p.getString("last_notify_text", "")).append("\n\n");
+        sb.append("通知內容：").append(p.getString("last_notify_text", "")).append("\n");
+        sb.append("去重抑制次數：").append(p.getInt("alarm_suppressed_count", 0)).append("\n");
+        sb.append("最後去重：").append(fmtTime(p.getLong("last_suppressed_wall", 0))).append("\n");
+        sb.append("去重 key：").append(p.getString("last_suppressed_key", "")).append("\n\n");
+        sb.append("警報紀錄：\n").append(alarmHistoryText()).append("\n\n");
         sb.append("最後回傳：\n").append(p.getString("last_body", ""));
         return sb.toString();
     }
@@ -440,6 +466,14 @@ public class MainActivity extends Activity {
             info.setText(alarmDebugText());
         });
         panel.addView(schedule);
+
+        Button clearHistory = new Button(this);
+        clearHistory.setText("清除警報紀錄 / 去重統計");
+        clearHistory.setOnClickListener(v -> {
+            AlarmReceiver.clearHistory(this);
+            info.setText(alarmDebugText());
+        });
+        panel.addView(clearHistory);
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(panel);

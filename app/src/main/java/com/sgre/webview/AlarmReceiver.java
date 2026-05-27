@@ -19,6 +19,8 @@ public class AlarmReceiver extends BroadcastReceiver {
     public static final String DEBUG_PREF = "sgre_alarm_debug";
     private static final String CHANNEL_ID = "sgre_alarm_only";
     private static final int ALARM_ID = 3302;
+    private static final String HISTORY_KEY = "alarm_history_lines";
+    private static final int HISTORY_MAX_LINES = 30;
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -93,12 +95,21 @@ public class AlarmReceiver extends BroadcastReceiver {
             if (alarm) {
                 next = 15000L;
                 normalSeen = 0;
-                if (notifyWhenAlarm && alarmKey.length() > 0 && !alarmKey.equals(lastKey)) {
+                if (alarmKey.length() > 0 && !alarmKey.equals(lastKey)) {
                     String notifyTitle = "SGRE " + firstNonEmpty(levelText, "警報");
                     if (category.length() > 0 && !"正常".equals(category)) notifyTitle += "｜" + category;
                     String notifyText = firstNonEmpty(main, summary, msg, "警報代碼：" + (code.length() == 0 ? "-" : code));
                     if (code.length() > 0 && notifyText.indexOf("代碼") < 0) notifyText += "｜代碼 " + code;
-                    showAlarmNotification(context, notifyTitle, notifyText);
+                    appendHistory(context, "警報", notifyTitle, notifyText, alarmKey);
+                    if (notifyWhenAlarm) showAlarmNotification(context, notifyTitle, notifyText);
+                    sp.edit().putInt("alarm_suppressed_count", 0).apply();
+                } else if (alarmKey.length() > 0 && alarmKey.equals(lastKey)) {
+                    int suppressed = sp.getInt("alarm_suppressed_count", 0) + 1;
+                    sp.edit()
+                            .putInt("alarm_suppressed_count", suppressed)
+                            .putLong("last_suppressed_wall", System.currentTimeMillis())
+                            .putString("last_suppressed_key", alarmKey)
+                            .apply();
                 }
                 sp.edit()
                         .putString("last_notify_alarm_key", alarmKey)
@@ -109,6 +120,7 @@ public class AlarmReceiver extends BroadcastReceiver {
                 if (lastActive) {
                     normalSeen++;
                     if (normalSeen >= 2) {
+                        appendHistory(context, "恢復", "SGRE 恢復正常", "警報已恢復正常", lastKey);
                         sp.edit()
                                 .putString("last_notify_alarm_key", "")
                                 .putBoolean("last_alarm_active_state", false)
@@ -271,6 +283,48 @@ public class AlarmReceiver extends BroadcastReceiver {
         } finally {
             if (conn != null) conn.disconnect();
         }
+    }
+
+
+    public static String getHistory(Context context) {
+        return context.getSharedPreferences(DEBUG_PREF, Context.MODE_PRIVATE).getString(HISTORY_KEY, "");
+    }
+
+    public static void clearHistory(Context context) {
+        context.getSharedPreferences(DEBUG_PREF, Context.MODE_PRIVATE).edit()
+                .remove(HISTORY_KEY)
+                .putInt("alarm_suppressed_count", 0)
+                .remove("last_suppressed_wall")
+                .remove("last_suppressed_key")
+                .apply();
+    }
+
+    private static void appendHistory(Context context, String type, String title, String text, String key) {
+        try {
+            android.content.SharedPreferences sp = context.getSharedPreferences(DEBUG_PREF, Context.MODE_PRIVATE);
+            String old = sp.getString(HISTORY_KEY, "");
+            String safeTitle = compact(title);
+            String safeText = compact(text);
+            String safeKey = compact(key);
+            String line = System.currentTimeMillis() + "｜" + compact(type) + "｜" + safeTitle + "｜" + safeText;
+            if (safeKey.length() > 0) line += "｜key=" + safeKey;
+            String merged = line + (old.length() > 0 ? "\n" + old : "");
+            String[] lines = merged.split("\n");
+            StringBuilder kept = new StringBuilder();
+            int max = Math.min(lines.length, HISTORY_MAX_LINES);
+            for (int i = 0; i < max; i++) {
+                if (i > 0) kept.append("\n");
+                kept.append(lines[i]);
+            }
+            sp.edit().putString(HISTORY_KEY, kept.toString()).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static String compact(String v) {
+        if (v == null) return "";
+        String out = v.replace('\n', ' ').replace('\r', ' ').trim();
+        return out.length() > 120 ? out.substring(0, 120) : out;
     }
 
     private static void saveDebug(Context context, String source, long started, String url, String body, String error,
