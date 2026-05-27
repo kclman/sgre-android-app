@@ -388,6 +388,11 @@ public class MainActivity extends Activity {
         sb.append("code：").append(p.getString("last_code", "")).append("\n");
         sb.append("alarm key：").append(p.getString("last_alarm_key", "")).append("\n");
         sb.append("msg：").append(p.getString("last_msg", "")).append("\n");
+        sb.append("主要告警：").append(p.getString("last_main", "")).append("\n");
+        sb.append("分類/等級：").append(p.getString("last_category", "")).append(" / ").append(p.getString("last_level_text", "")).append("\n");
+        sb.append("摘要：").append(p.getString("last_summary", "")).append("\n");
+        String raw = p.getString("last_raw", "");
+        if (raw.length() > 0) sb.append("RAW：").append(raw).append("\n");
         sb.append("錯誤：").append(p.getString("last_error", "")).append("\n");
         sb.append("最後恢復：").append(fmtTime(p.getLong("last_recovery_wall", 0))).append("\n");
         sb.append("恢復訊息：").append(p.getString("last_recovery_msg", "")).append("\n\n");

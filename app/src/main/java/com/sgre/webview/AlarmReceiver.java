@@ -39,6 +39,11 @@ public class AlarmReceiver extends BroadcastReceiver {
         String msg = "";
         String code = "";
         String alarmKey = "";
+        String main = "";
+        String category = "";
+        String levelText = "";
+        String summary = "";
+        String raw = "";
         long next = 60000L;
 
         try {
@@ -66,8 +71,15 @@ public class AlarmReceiver extends BroadcastReceiver {
                 msg = str(body, "msg");
                 code = num(body, "code");
                 alarmKey = str(body, "alarm_key");
+                main = str(body, "main");
+                category = str(body, "category");
+                levelText = str(body, "level_text");
+                summary = str(body, "summary");
+                raw = str(body, "raw");
+
+                if (alarm && msg.length() == 0) msg = firstNonEmpty(main, summary, "SGRE 警報");
                 if (alarm && alarmKey.length() == 0) {
-                    alarmKey = "code_" + code + "_" + msg;
+                    alarmKey = "code_" + code + "_" + firstNonEmpty(main, msg, category, raw);
                 }
             }
 
@@ -82,9 +94,11 @@ public class AlarmReceiver extends BroadcastReceiver {
                 next = 15000L;
                 normalSeen = 0;
                 if (notifyWhenAlarm && alarmKey.length() > 0 && !alarmKey.equals(lastKey)) {
-                    showAlarmNotification(context,
-                            msg.length() == 0 ? "SGRE 警報" : msg,
-                            "警報代碼：" + (code.length() == 0 ? "-" : code));
+                    String notifyTitle = "SGRE " + firstNonEmpty(levelText, "警報");
+                    if (category.length() > 0 && !"正常".equals(category)) notifyTitle += "｜" + category;
+                    String notifyText = firstNonEmpty(main, summary, msg, "警報代碼：" + (code.length() == 0 ? "-" : code));
+                    if (code.length() > 0 && notifyText.indexOf("代碼") < 0) notifyText += "｜代碼 " + code;
+                    showAlarmNotification(context, notifyTitle, notifyText);
                 }
                 sp.edit()
                         .putString("last_notify_alarm_key", alarmKey)
@@ -111,9 +125,11 @@ public class AlarmReceiver extends BroadcastReceiver {
             error = e.getClass().getSimpleName() + ": " + e.getMessage();
         }
 
-        saveDebug(context, source, started, urlUsed, body, error, alarm, msg, code, alarmKey, next);
+        saveDebug(context, source, started, urlUsed, body, error, alarm, msg, code, alarmKey, main, category, levelText, summary, raw, next);
         scheduleNext(context, next);
-        return alarm ? "alarm=true code=" + code + " key=" + alarmKey + " msg=" + msg : "alarm=false " + (error.length() > 0 ? error : "正常");
+        return alarm
+                ? "alarm=true level=" + firstNonEmpty(levelText, "-") + " category=" + firstNonEmpty(category, "-") + " key=" + alarmKey + " main=" + firstNonEmpty(main, msg)
+                : "alarm=false " + (error.length() > 0 ? error : "正常");
     }
 
     public static void scheduleNext(Context context, long delayMs) {
@@ -258,7 +274,8 @@ public class AlarmReceiver extends BroadcastReceiver {
     }
 
     private static void saveDebug(Context context, String source, long started, String url, String body, String error,
-                                  boolean alarm, String msg, String code, String alarmKey, long next) {
+                                  boolean alarm, String msg, String code, String alarmKey,
+                                  String main, String category, String levelText, String summary, String raw, long next) {
         String shortBody = body == null ? "" : body;
         if (shortBody.length() > 600) shortBody = shortBody.substring(0, 600);
         context.getSharedPreferences(DEBUG_PREF, Context.MODE_PRIVATE).edit()
@@ -272,8 +289,21 @@ public class AlarmReceiver extends BroadcastReceiver {
                 .putString("last_msg", msg == null ? "" : msg)
                 .putString("last_code", code == null ? "" : code)
                 .putString("last_alarm_key", alarmKey == null ? "" : alarmKey)
+                .putString("last_main", main == null ? "" : main)
+                .putString("last_category", category == null ? "" : category)
+                .putString("last_level_text", levelText == null ? "" : levelText)
+                .putString("last_summary", summary == null ? "" : summary)
+                .putString("last_raw", raw == null ? "" : raw)
                 .putLong("last_next_delay", next)
                 .apply();
+    }
+
+    private static String firstNonEmpty(String... values) {
+        if (values == null) return "";
+        for (String v : values) {
+            if (v != null && v.length() > 0) return v;
+        }
+        return "";
     }
 
     private static String str(String json, String key) {
