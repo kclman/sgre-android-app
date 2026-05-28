@@ -1307,16 +1307,16 @@ public class MainActivity extends Activity {
 
     private String itemNumberByName(String json, String namePart, String key) {
         try {
-            String mark = ""name"";
+            String mark = "\"name\"";
             int searchFrom = 0;
             while (true) {
                 int s = json.indexOf(mark, searchFrom);
                 if (s < 0) return "";
                 int colon = json.indexOf(":", s + mark.length());
                 if (colon < 0) return "";
-                int q1 = json.indexOf(""", colon + 1);
+                int q1 = json.indexOf("\"", colon + 1);
                 if (q1 < 0) return "";
-                int q2 = json.indexOf(""", q1 + 1);
+                int q2 = json.indexOf("\"", q1 + 1);
                 if (q2 < 0) return "";
                 String found = json.substring(q1 + 1, q2);
                 if (found.contains(namePart)) {
