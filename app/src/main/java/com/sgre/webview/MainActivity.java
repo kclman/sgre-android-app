@@ -1026,6 +1026,15 @@ public class MainActivity extends Activity {
         ArrayList<String> out = new ArrayList<>();
         String raw = local ? d.localUrl : d.remoteUrl;
         String origin = originOnly(raw);
+
+        // Stage13: generic ESP/Selpos cards should not hit ESPHome's built-in port 80 first.
+        // Some ESPHome web_server JSON endpoints can log "JSON document overflow" when probed.
+        // If the local URL has no explicit port, try our custom UI/API port 81 first and skip port 80 probing.
+        if (local && !hasExplicitPort(origin)) {
+            addLiveCandidate(out, forcePort81(origin));
+            return out;
+        }
+
         addLiveCandidate(out, origin);
         addLiveCandidate(out, DeviceStore.normalize(raw));
         if (local) {
@@ -1033,6 +1042,16 @@ public class MainActivity extends Activity {
             addLiveCandidate(out, port81);
         }
         return out;
+    }
+
+    private boolean hasExplicitPort(String url) {
+        try {
+            if (url == null || url.trim().length() == 0) return false;
+            URL u = new URL(DeviceStore.normalize(url));
+            return u.getPort() > 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private void addLiveCandidate(ArrayList<String> out, String base) {
