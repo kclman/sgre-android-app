@@ -38,6 +38,8 @@ import android.widget.TextView;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
@@ -47,6 +49,7 @@ import java.util.Map;
 
 public class MainActivity extends Activity {
     private static final int REQ_IMPORT_DEVICES_FILE = 7101;
+    private static final int REQ_EXPORT_DEVICES_FILE = 7102;
     private static final long HOME_SGRE_REFRESH_MS = 10000L;
     private LinearLayout listLayout;
     private boolean autoOpened = false;
@@ -279,28 +282,47 @@ public class MainActivity extends Activity {
 
 
     private void showExportDevicesDialog() {
-        String data = DeviceStore.exportJson(this);
+        createExportFile();
+    }
 
-        EditText output = new EditText(this);
-        output.setText(data);
-        output.setMinLines(8);
-        output.setSelectAllOnFocus(true);
+    private void createExportFile() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE, "sgre_devices_backup.sgre.json");
+            startActivityForResult(intent, REQ_EXPORT_DEVICES_FILE);
+        } catch (Exception e) {
+            new AlertDialog.Builder(this)
+                    .setTitle("無法建立設備檔案")
+                    .setMessage("檔案選擇器無法開啟，請確認手機已安裝檔案管理器。")
+                    .setPositiveButton("確定", null)
+                    .show();
+        }
+    }
 
-        new AlertDialog.Builder(this)
-                .setTitle("導出設備檔案")
-                .setMessage("以下是設備備份資料，可複製保存為 sgre_devices_backup.json。")
-                .setView(output)
-                .setPositiveButton("複製", (dialog, which) -> {
-                    try {
-                        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                        if (cm != null) {
-                            cm.setPrimaryClip(ClipData.newPlainText("SGRE devices", DeviceStore.exportJson(this)));
-                        }
-                    } catch (Exception ignored) {
-                    }
-                })
-                .setNegativeButton("關閉", null)
-                .show();
+    private void exportDevicesToUri(Uri uri) {
+        try {
+            OutputStream os = getContentResolver().openOutputStream(uri, "wt");
+            if (os == null) throw new Exception("openOutputStream failed");
+
+            OutputStreamWriter writer = new OutputStreamWriter(os);
+            writer.write(DeviceStore.exportJson(this));
+            writer.flush();
+            writer.close();
+
+            new AlertDialog.Builder(this)
+                    .setTitle("導出完成")
+                    .setMessage("設備清單已存成檔案。之後可用「匯入設備檔案」選取此檔案還原。")
+                    .setPositiveButton("確定", null)
+                    .show();
+        } catch (Exception e) {
+            new AlertDialog.Builder(this)
+                    .setTitle("導出失敗")
+                    .setMessage("無法寫入設備檔案，請重新選擇儲存位置。")
+                    .setPositiveButton("確定", null)
+                    .show();
+        }
     }
 
 
@@ -319,7 +341,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             new AlertDialog.Builder(this)
                     .setTitle("無法開啟檔案選擇器")
-                    .setMessage("檔案選擇器無法開啟時，可重新安裝檔案管理器，或先用舊版貼上匯入。")
+                    .setMessage("檔案選擇器無法開啟，請確認手機已安裝檔案管理器。")
                     .setPositiveButton("確定", null)
                     .show();
         }
@@ -332,6 +354,12 @@ public class MainActivity extends Activity {
             Uri uri = data.getData();
             if (uri == null) return;
             importDevicesFromUri(uri);
+            return;
+        }
+        if (requestCode == REQ_EXPORT_DEVICES_FILE && resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri == null) return;
+            exportDevicesToUri(uri);
         }
     }
 
@@ -366,7 +394,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             new AlertDialog.Builder(this)
                     .setTitle("匯入失敗")
-                    .setMessage("無法讀取檔案，請確認檔案可開啟，或改用貼上匯入。")
+                    .setMessage("無法讀取檔案，請確認檔案可開啟。")
                     .setPositiveButton("確定", null)
                     .show();
         }
@@ -905,6 +933,28 @@ public class MainActivity extends Activity {
                     if (batterySoc.length() > 0) e = intText(batterySoc) + "%";
                     if (battVoltLive.length() > 0) v = oneDecimalText(battVoltLive) + "V";
                     if (totalLoad.length() > 0) l = intText(totalLoad) + "W";
+                }
+
+                // Stage14.3: connection status must mean the device page is reachable, not only that /api/live or /api/alarm returns JSON.
+                // Some external/WAN devices can open normally but expose the API through another path or block API probing.
+                // In that case keep the card active and show 「可連線」 instead of marking it gray.
+                if (!online) {
+                    String body = "";
+                    if (d.localUrl != null && d.localUrl.trim().length() > 0) {
+                        body = fetch(DeviceStore.normalize(d.localUrl), 1000, 1500);
+                        if (body.length() > 0) activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
+                    }
+                    if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
+                        body = fetch(DeviceStore.normalize(d.remoteUrl), 1400, 2400);
+                        if (body.length() > 0) activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
+                    }
+                    if (body.length() > 0) {
+                        online = true;
+                        v = "可連線";
+                        p = "";
+                        e = "";
+                        l = "";
+                    }
                 }
             } else {
                 String live = "";
