@@ -41,6 +41,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -68,14 +69,16 @@ public class MainActivity extends Activity {
         final TextView power;
         final TextView energy;
         final TextView load;
+        final TextView alarmStatus;
 
-        CardWidgets(DeviceStore.Device device, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load) {
+        CardWidgets(DeviceStore.Device device, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load, TextView alarmStatus) {
             this.device = device;
             this.card = card;
             this.voltage = voltage;
             this.power = power;
             this.energy = energy;
             this.load = load;
+            this.alarmStatus = alarmStatus;
         }
     }
 
@@ -256,10 +259,9 @@ public class MainActivity extends Activity {
         if (listLayout == null) return;
         List<DeviceStore.Device> devices = DeviceStore.load(this);
         for (DeviceStore.Device d : devices) {
-            if (!"SGRE".equals(d.type)) continue;
             CardWidgets w = cardWidgets.get(d.id);
             if (w == null) continue;
-            fetchSummary(d, w.card, w.voltage, w.power, w.energy, w.load, null);
+            fetchSummary(d, w.card, w.voltage, w.power, w.energy, w.load, w.alarmStatus, null);
         }
     }
 
@@ -617,6 +619,16 @@ public class MainActivity extends Activity {
 
         box.addView(grid);
 
+        TextView alarmStatus = new TextView(this);
+        alarmStatus.setTextColor(Color.rgb(214, 65, 65));
+        alarmStatus.setTextSize(14);
+        alarmStatus.setTypeface(null, Typeface.BOLD);
+        alarmStatus.setIncludeFontPadding(false);
+        alarmStatus.setSingleLine(true);
+        alarmStatus.setPadding(dp(2), dp(0), dp(2), dp(0));
+        alarmStatus.setVisibility(View.GONE);
+        box.addView(alarmStatus);
+
         box.setOnClickListener(v -> openDevice(d));
         box.setOnLongClickListener(v -> {
             showDeviceActionDialog(d);
@@ -627,10 +639,10 @@ public class MainActivity extends Activity {
         lp.setMargins(0, 0, 0, dp(12));
         listLayout.addView(box, lp);
         if (d.id != null && d.id.length() > 0) {
-            cardWidgets.put(d.id, new CardWidgets(d, box, voltage, power, energy, load));
+            cardWidgets.put(d.id, new CardWidgets(d, box, voltage, power, energy, load, alarmStatus));
         }
 
-        fetchSummary(d, box, voltage, power, energy, load, null);
+        fetchSummary(d, box, voltage, power, energy, load, alarmStatus, null);
     }
 
     private TextView metric(String label, String value, int dotColor) {
@@ -704,6 +716,27 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String twoDecimalText(String raw) {
+        try {
+            if (raw == null || raw.length() == 0) return "";
+            float val = Float.parseFloat(raw);
+            if (Math.abs(val - Math.round(val)) < 0.005f) return String.valueOf(Math.round(val));
+            return String.format(java.util.Locale.US, "%.2f", val);
+        } catch (Exception e) {
+            return raw == null ? "" : raw;
+        }
+    }
+
+    private String formatCardValue(String label, String value, String unit) {
+        if (value == null || value.length() == 0) return "";
+        String u = unit == null ? "" : unit;
+        if ("W".equals(u)) return intText(value) + u;
+        if ("V".equals(u)) return twoDecimalText(value) + u;
+        if ("%".equals(u)) return oneDecimalText(value) + u;
+        if ("台".equals(u)) return intText(value) + u;
+        return value + u;
+    }
+
     private float parseNumber(String raw) throws Exception {
         if (raw == null || raw.length() == 0) throw new Exception("empty");
         return Float.parseFloat(raw);
@@ -749,13 +782,18 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void fetchSummary(DeviceStore.Device d, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load, TextView urlLabel) {
+    private void fetchSummary(DeviceStore.Device d, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load, TextView alarmStatus, TextView urlLabel) {
         new Thread(() -> {
             boolean online = false;
             String v = "--";
             String p = "--";
             String e = "--";
             String l = "--";
+            String labelP = "功率";
+            String labelE = "SOC";
+            String labelV = "電壓";
+            String labelL = "負載";
+            String alarmLine = "";
             String activeUrlLabel = "目前連線：未連線";
 
             if ("SGRE".equals(d.type)) {
@@ -772,6 +810,19 @@ public class MainActivity extends Activity {
                     online = true;
                     String battVolt = num(alarm, "batt_v");
                     if (battVolt.length() > 0) v = oneDecimalText(battVolt) + "V";
+                    if (jsonBool(alarm, "alarm")) {
+                        String levelText = jsonString(alarm, "level_text");
+                        String mainText = firstNonEmpty(jsonString(alarm, "main"), jsonString(alarm, "msg"));
+                        if (levelText.length() == 0 || "正常".equals(levelText)) levelText = "警告";
+                        if (mainText.length() == 0 || "無告警".equals(mainText) || "正常".equals(mainText)) {
+                            mainText = firstNonEmpty(jsonString(alarm, "summary"), "未知告警");
+                        }
+                        if (mainText.startsWith(levelText + "｜")) {
+                            alarmLine = mainText;
+                        } else {
+                            alarmLine = levelText + "｜" + mainText;
+                        }
+                    }
                 }
 
                 String live = fetch((usingRemote ? remoteBase : localBase) + "/api/live", 1000, 1600);
@@ -856,23 +907,63 @@ public class MainActivity extends Activity {
                     if (totalLoad.length() > 0) l = intText(totalLoad) + "W";
                 }
             } else {
-                String body = "";
-                if (d.localUrl != null && d.localUrl.trim().length() > 0) {
-                    body = fetch(DeviceStore.normalize(d.localUrl), 1000, 1400);
-                    if (body.length() > 0) activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
+                String live = "";
+                String liveSource = "";
+                for (String u : liveApiCandidates(d, true)) {
+                    live = fetch(u, 1000, 1800);
+                    if (live.length() > 0) {
+                        liveSource = u;
+                        activeUrlLabel = "目前內網：" + shortUrl(u);
+                        break;
+                    }
                 }
-                if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
-                    body = fetch(DeviceStore.normalize(d.remoteUrl), 1200, 1600);
-                    if (body.length() > 0) activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
+                if (live.length() == 0) {
+                    for (String u : liveApiCandidates(d, false)) {
+                        live = fetch(u, 1200, 2200);
+                        if (live.length() > 0) {
+                            liveSource = u;
+                            activeUrlLabel = "目前外網：" + shortUrl(u);
+                            break;
+                        }
+                    }
                 }
-                online = body.length() > 0;
-                if (online) {
-                    v = "可連線";
-                    p = "";
-                    e = "";
-                    l = "";
+
+                if (live.length() > 0 && hasGenericCardItems(live)) {
+                    online = true;
+                    labelP = "在線";
+                    labelE = "平均SOC";
+                    labelV = "總功率";
+                    labelL = "電壓";
+                    p = cardItemDisplay(live, "在線");
+                    e = cardItemDisplay(live, "平均SOC");
+                    v = cardItemDisplay(live, "總功率");
+                    l = cardItemDisplay(live, "電壓");
+                    if (p.length() == 0 || e.length() == 0 || v.length() == 0 || l.length() == 0) {
+                        String[] generic = firstCardItems(live, 4);
+                        if (p.length() == 0 && generic.length > 0) { labelP = generic[0]; p = generic.length > 1 ? generic[1] : ""; }
+                        if (e.length() == 0 && generic.length > 2) { labelE = generic[2]; e = generic.length > 3 ? generic[3] : ""; }
+                        if (v.length() == 0 && generic.length > 4) { labelV = generic[4]; v = generic.length > 5 ? generic[5] : ""; }
+                        if (l.length() == 0 && generic.length > 6) { labelL = generic[6]; l = generic.length > 7 ? generic[7] : ""; }
+                    }
                 } else {
-                    v = "--";
+                    String body = "";
+                    if (d.localUrl != null && d.localUrl.trim().length() > 0) {
+                        body = fetch(DeviceStore.normalize(d.localUrl), 1000, 1400);
+                        if (body.length() > 0) activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
+                    }
+                    if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
+                        body = fetch(DeviceStore.normalize(d.remoteUrl), 1200, 1600);
+                        if (body.length() > 0) activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
+                    }
+                    online = body.length() > 0;
+                    if (online) {
+                        v = "可連線";
+                        p = "";
+                        e = "";
+                        l = "";
+                    } else {
+                        v = "--";
+                    }
                 }
             }
 
@@ -888,13 +979,27 @@ public class MainActivity extends Activity {
             final String fp = p;
             final String fe = e;
             final String fl = l;
+            final String flabelP = labelP;
+            final String flabelE = labelE;
+            final String flabelV = labelV;
+            final String flabelL = labelL;
+            final String fa = alarmLine;
             final String furl = activeUrlLabel;
 
             runOnUiThread(() -> {
-                setMetricText(power, "功率", fp);
-                setMetricText(energy, "SOC", fe);
-                setMetricText(voltage, "電壓", fv);
-                setMetricText(load, "負載", fl);
+                setMetricText(power, flabelP, fp);
+                setMetricText(energy, flabelE, fe);
+                setMetricText(voltage, flabelV, fv);
+                setMetricText(load, flabelL, fl);
+                if (alarmStatus != null) {
+                    if (fa != null && fa.length() > 0) {
+                        alarmStatus.setText(fa);
+                        alarmStatus.setVisibility(View.VISIBLE);
+                    } else {
+                        alarmStatus.setText("");
+                        alarmStatus.setVisibility(View.GONE);
+                    }
+                }
                 saveDeviceRuntime(d, ok ? furl : "目前連線：未連線");
                 if (urlLabel != null) urlLabel.setText("");
                 if (!ok) {
@@ -915,6 +1020,45 @@ public class MainActivity extends Activity {
 
     private String apiBase(DeviceStore.Device d) {
         return originOnly(firstUrl(d));
+    }
+
+    private List<String> liveApiCandidates(DeviceStore.Device d, boolean local) {
+        ArrayList<String> out = new ArrayList<>();
+        String raw = local ? d.localUrl : d.remoteUrl;
+        String origin = originOnly(raw);
+        addLiveCandidate(out, origin);
+        addLiveCandidate(out, DeviceStore.normalize(raw));
+        if (local) {
+            String port81 = forcePort81(origin);
+            addLiveCandidate(out, port81);
+        }
+        return out;
+    }
+
+    private void addLiveCandidate(ArrayList<String> out, String base) {
+        try {
+            if (base == null) return;
+            String b = DeviceStore.normalize(base);
+            if (b.length() == 0) return;
+            if (b.endsWith("/api/live")) {
+                if (!out.contains(b)) out.add(b);
+            } else {
+                String u = b + "/api/live";
+                if (!out.contains(u)) out.add(u);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String forcePort81(String url) {
+        try {
+            if (url == null || url.trim().length() == 0) return "";
+            URL u = new URL(DeviceStore.normalize(url));
+            if (u.getPort() > 0) return "";
+            return u.getProtocol() + "://" + u.getHost() + ":81";
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private String originOnly(String url) {
@@ -1037,6 +1181,54 @@ public class MainActivity extends Activity {
         }
     }
 
+    private boolean jsonBool(String json, String key) {
+        try {
+            String mark = "\"" + key + "\"";
+            int s = json.indexOf(mark);
+            if (s < 0) return false;
+            int colon = json.indexOf(":", s + mark.length());
+            if (colon < 0) return false;
+            int v = colon + 1;
+            while (v < json.length() && json.charAt(v) == ' ') v++;
+            return json.startsWith("true", v) || json.startsWith("1", v);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String jsonString(String json, String key) {
+        try {
+            String mark = "\"" + key + "\"";
+            int s = json.indexOf(mark);
+            if (s < 0) return "";
+            int colon = json.indexOf(":", s + mark.length());
+            if (colon < 0) return "";
+            int q1 = json.indexOf("\"", colon + 1);
+            if (q1 < 0) return "";
+            StringBuilder out = new StringBuilder();
+            boolean esc = false;
+            for (int i = q1 + 1; i < json.length(); i++) {
+                char c = json.charAt(i);
+                if (esc) {
+                    if (c == 'n') out.append(' ');
+                    else if (c == 'r') out.append(' ');
+                    else if (c == 't') out.append(' ');
+                    else out.append(c);
+                    esc = false;
+                } else if (c == '\\') {
+                    esc = true;
+                } else if (c == '\"') {
+                    break;
+                } else {
+                    out.append(c);
+                }
+            }
+            return out.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private String num(String json, String key) {
         try {
             String mark = "\"" + key + "\"";
@@ -1051,6 +1243,113 @@ public class MainActivity extends Activity {
             return json.substring(v, e);
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    private boolean hasGenericCardItems(String json) {
+        try {
+            return json != null && json.indexOf("\"card\"") >= 0 && json.indexOf("\"items\"") >= 0 && json.indexOf("\"label\"") >= 0 && json.indexOf("\"value\"") >= 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String cardItemDisplay(String json, String label) {
+        String value = cardItemNumber(json, label);
+        if (value.length() == 0) return "";
+        String unit = cardItemUnit(json, label);
+        return formatCardValue(label, value, unit);
+    }
+
+    private String cardItemNumber(String json, String label) {
+        try {
+            String mark = "\"label\"";
+            int searchFrom = 0;
+            while (true) {
+                int s = json.indexOf(mark, searchFrom);
+                if (s < 0) return "";
+                int colon = json.indexOf(":", s + mark.length());
+                if (colon < 0) return "";
+                int q1 = json.indexOf("\"", colon + 1);
+                if (q1 < 0) return "";
+                int q2 = json.indexOf("\"", q1 + 1);
+                if (q2 < 0) return "";
+                String found = json.substring(q1 + 1, q2);
+                if (label.equals(found)) {
+                    int value = json.indexOf("\"value\"", q2);
+                    if (value < 0) return "";
+                    int vc = json.indexOf(":", value);
+                    if (vc < 0) return "";
+                    int start = vc + 1;
+                    while (start < json.length() && (json.charAt(start) == ' ' || json.charAt(start) == '\"')) start++;
+                    int end = start;
+                    while (end < json.length() && "-0123456789.".indexOf(json.charAt(end)) >= 0) end++;
+                    return json.substring(start, end);
+                }
+                searchFrom = q2 + 1;
+            }
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private String cardItemUnit(String json, String label) {
+        try {
+            String mark = "\"label\"";
+            int searchFrom = 0;
+            while (true) {
+                int s = json.indexOf(mark, searchFrom);
+                if (s < 0) return "";
+                int colon = json.indexOf(":", s + mark.length());
+                if (colon < 0) return "";
+                int q1 = json.indexOf("\"", colon + 1);
+                if (q1 < 0) return "";
+                int q2 = json.indexOf("\"", q1 + 1);
+                if (q2 < 0) return "";
+                String found = json.substring(q1 + 1, q2);
+                if (label.equals(found)) {
+                    int unit = json.indexOf("\"unit\"", q2);
+                    if (unit < 0) return "";
+                    int uc = json.indexOf(":", unit);
+                    if (uc < 0) return "";
+                    int u1 = json.indexOf("\"", uc + 1);
+                    if (u1 < 0) return "";
+                    int u2 = json.indexOf("\"", u1 + 1);
+                    if (u2 < 0) return "";
+                    return json.substring(u1 + 1, u2);
+                }
+                searchFrom = q2 + 1;
+            }
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private String[] firstCardItems(String json, int maxItems) {
+        try {
+            java.util.ArrayList<String> out = new java.util.ArrayList<>();
+            String mark = "\"label\"";
+            int searchFrom = 0;
+            while (out.size() < maxItems * 2) {
+                int s = json.indexOf(mark, searchFrom);
+                if (s < 0) break;
+                int colon = json.indexOf(":", s + mark.length());
+                if (colon < 0) break;
+                int q1 = json.indexOf("\"", colon + 1);
+                if (q1 < 0) break;
+                int q2 = json.indexOf("\"", q1 + 1);
+                if (q2 < 0) break;
+                String label = json.substring(q1 + 1, q2);
+                String value = cardItemDisplay(json.substring(s), label);
+                if (label.length() > 0 && value.length() > 0) {
+                    out.add(label);
+                    out.add(value);
+                }
+                searchFrom = q2 + 1;
+            }
+            return out.toArray(new String[0]);
+        } catch (Exception e) {
+            return new String[0];
         }
     }
 
