@@ -930,20 +930,33 @@ public class MainActivity extends Activity {
 
                 if (live.length() > 0 && hasGenericCardItems(live)) {
                     online = true;
-                    labelP = "在線";
-                    labelE = "平均SOC";
-                    labelV = "總功率";
-                    labelL = "電壓";
-                    p = cardItemDisplay(live, "在線");
-                    e = cardItemDisplay(live, "平均SOC");
-                    v = cardItemDisplay(live, "總功率");
-                    l = cardItemDisplay(live, "電壓");
-                    if (p.length() == 0 || e.length() == 0 || v.length() == 0 || l.length() == 0) {
-                        String[] generic = firstCardItems(live, 4);
-                        if (p.length() == 0 && generic.length > 0) { labelP = generic[0]; p = generic.length > 1 ? generic[1] : ""; }
-                        if (e.length() == 0 && generic.length > 2) { labelE = generic[2]; e = generic.length > 3 ? generic[3] : ""; }
-                        if (v.length() == 0 && generic.length > 4) { labelV = generic[4]; v = generic.length > 5 ? generic[5] : ""; }
-                        if (l.length() == 0 && generic.length > 6) { labelL = generic[6]; l = generic.length > 7 ? generic[7] : ""; }
+                    if (isSelposLive(live)) {
+                        labelP = "280 SOC";
+                        labelE = "314 SOC";
+                        labelV = "總功率";
+                        labelL = "電壓";
+                        String soc280 = itemNumberByName(live, "280", "soc");
+                        String soc314 = itemNumberByName(live, "314", "soc");
+                        p = soc280.length() > 0 ? oneDecimalText(soc280) + "%" : "--";
+                        e = soc314.length() > 0 ? oneDecimalText(soc314) + "%" : "--";
+                        v = cardItemDisplay(live, "總功率");
+                        l = cardItemDisplay(live, "電壓");
+                    } else {
+                        labelP = "在線";
+                        labelE = "平均SOC";
+                        labelV = "總功率";
+                        labelL = "電壓";
+                        p = cardItemDisplay(live, "在線");
+                        e = cardItemDisplay(live, "平均SOC");
+                        v = cardItemDisplay(live, "總功率");
+                        l = cardItemDisplay(live, "電壓");
+                        if (p.length() == 0 || e.length() == 0 || v.length() == 0 || l.length() == 0) {
+                            String[] generic = firstCardItems(live, 4);
+                            if (p.length() == 0 && generic.length > 0) { labelP = generic[0]; p = generic.length > 1 ? generic[1] : ""; }
+                            if (e.length() == 0 && generic.length > 2) { labelE = generic[2]; e = generic.length > 3 ? generic[3] : ""; }
+                            if (v.length() == 0 && generic.length > 4) { labelV = generic[4]; v = generic.length > 5 ? generic[5] : ""; }
+                            if (l.length() == 0 && generic.length > 6) { labelL = generic[6]; l = generic.length > 7 ? generic[7] : ""; }
+                        }
                     }
                 } else {
                     String body = "";
@@ -1279,6 +1292,46 @@ public class MainActivity extends Activity {
         String unit = cardItemUnit(json, label);
         return formatCardValue(label, value, unit);
     }
+    private boolean isSelposLive(String json) {
+        try {
+            String device = jsonString(json, "device").toUpperCase(java.util.Locale.US);
+            String name = jsonString(json, "name").toUpperCase(java.util.Locale.US);
+            String title = jsonString(json, "title").toUpperCase(java.util.Locale.US);
+            return device.contains("SELPOS") || device.contains("SEPLOS")
+                    || name.contains("SELPOS") || name.contains("SEPLOS")
+                    || title.contains("SELPOS") || title.contains("SEPLOS");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String itemNumberByName(String json, String namePart, String key) {
+        try {
+            String mark = ""name"";
+            int searchFrom = 0;
+            while (true) {
+                int s = json.indexOf(mark, searchFrom);
+                if (s < 0) return "";
+                int colon = json.indexOf(":", s + mark.length());
+                if (colon < 0) return "";
+                int q1 = json.indexOf(""", colon + 1);
+                if (q1 < 0) return "";
+                int q2 = json.indexOf(""", q1 + 1);
+                if (q2 < 0) return "";
+                String found = json.substring(q1 + 1, q2);
+                if (found.contains(namePart)) {
+                    int objEnd = json.indexOf("}", q2);
+                    if (objEnd < 0) objEnd = Math.min(json.length(), q2 + 220);
+                    String item = json.substring(q2, Math.min(json.length(), objEnd + 1));
+                    return num(item, key);
+                }
+                searchFrom = q2 + 1;
+            }
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
 
     private String cardItemNumber(String json, String label) {
         try {
