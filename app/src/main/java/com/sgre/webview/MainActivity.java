@@ -11,6 +11,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
@@ -20,9 +21,11 @@ import android.os.Looper;
 import android.net.Uri;
 import android.text.SpannableString;
 import android.text.Spanned;
+import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.RelativeSizeSpan;
 import android.text.style.StyleSpan;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -689,15 +692,14 @@ public class MainActivity extends Activity {
     private TextView metric(String label, String value, int dotColor) {
         TextView t = new TextView(this);
         t.setTag(Integer.valueOf(dotColor));
-        setMetricText(t, label, value);
         t.setTextColor(Color.rgb(58, 70, 84));
-        t.setTextSize(11);
+        t.setTextSize(12);
         t.setTypeface(null, Typeface.BOLD);
         t.setIncludeFontPadding(false);
         t.setSingleLine(false);
-        t.setMaxLines(3);
-        t.setGravity(Gravity.START);
-        t.setLineSpacing(0f, 0.88f);
+        t.setMaxLines(2);
+        t.setGravity(Gravity.CENTER);
+        t.setLineSpacing(0f, 0.94f);
         t.setPadding(dp(1), dp(1), dp(2), dp(4));
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
@@ -705,18 +707,24 @@ public class MainActivity extends Activity {
         lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
         lp.setMargins(0, 0, dp(4), dp(5));
         t.setLayoutParams(lp);
+        setMetricText(t, label, value);
         return t;
     }
 
     private void setMetricText(TextView target, String label, String value) {
+        applyMetricText(target, label, value, true);
+    }
+
+    private void applyMetricText(TextView target, String label, String value, boolean scheduleAfterLayout) {
         if (value == null || value.length() == 0) {
             target.setText("");
         } else if ("可連線".equals(value)) {
             target.setText(value);
         } else {
-            // Stage15_1: factory-like compact card style.
-            // Label and value are stacked vertically to avoid clipping in two-column cards.
-            String text = "• " + label + "\n" + value;
+            // Stage15_4: card width follows screen width, value text auto-fits each metric cell.
+            // Keep label/value stacked, keep value on one visual line, and use the largest safe font size.
+            String safeValue = noBreakValue(value);
+            String text = "• " + label + "\n" + safeValue;
             SpannableString s = new SpannableString(text);
             int dotColor = Color.rgb(76, 195, 112);
             Object tag = target.getTag();
@@ -725,14 +733,43 @@ public class MainActivity extends Activity {
             int valueStart = Math.min(text.length(), labelEnd + 1);
             s.setSpan(new ForegroundColorSpan(dotColor), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             if (labelEnd > 0) {
-                s.setSpan(new RelativeSizeSpan(0.82f), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                s.setSpan(new AbsoluteSizeSpan(11, true), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                s.setSpan(new StyleSpan(Typeface.BOLD), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             if (valueStart < text.length()) {
-                s.setSpan(new RelativeSizeSpan(1.08f), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                float valueSp = fitMetricValueSp(target, value, 18.5f, 9.5f);
+                s.setSpan(new AbsoluteSizeSpan(Math.round(valueSp), true), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 s.setSpan(new StyleSpan(Typeface.BOLD), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             target.setText(s);
+
+            if (scheduleAfterLayout && target.getWidth() <= 0) {
+                final String flabel = label;
+                final String fvalue = value;
+                target.post(() -> applyMetricText(target, flabel, fvalue, false));
+            }
         }
+    }
+
+    private String noBreakValue(String value) {
+        if (value == null || value.length() <= 1) return value == null ? "" : value;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            if (i > 0) sb.append('\u2060');
+            sb.append(value.charAt(i));
+        }
+        return sb.toString();
+    }
+
+    private float fitMetricValueSp(TextView target, String value, float maxSp, float minSp) {
+        int available = target.getWidth() - target.getPaddingLeft() - target.getPaddingRight();
+        if (available <= dp(12)) return maxSp;
+        Paint p = new Paint(target.getPaint());
+        for (float sp = maxSp; sp >= minSp; sp -= 0.5f) {
+            p.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics()));
+            if (p.measureText(value) <= available) return sp;
+        }
+        return minSp;
     }
 
     private boolean hasValue(String value) {
