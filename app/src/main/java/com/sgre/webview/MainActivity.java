@@ -632,6 +632,8 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
         // Compact card layout: keep the device list dense like the earlier working version.
         box.setPadding(dp(10), dp(10), dp(10), dp(10));
+        // Stage15_5: keep every home card visually the same size, even cards that only show "可連線".
+        box.setMinimumHeight(dp(136));
         box.setBackground(bg(Color.rgb(248, 250, 252), 22));
 
         LinearLayout row = new LinearLayout(this);
@@ -693,7 +695,7 @@ public class MainActivity extends Activity {
         TextView t = new TextView(this);
         t.setTag(Integer.valueOf(dotColor));
         t.setTextColor(Color.rgb(58, 70, 84));
-        t.setTextSize(12);
+        t.setTextSize(13);
         t.setTypeface(null, Typeface.BOLD);
         t.setIncludeFontPadding(false);
         t.setSingleLine(false);
@@ -733,11 +735,11 @@ public class MainActivity extends Activity {
             int valueStart = Math.min(text.length(), labelEnd + 1);
             s.setSpan(new ForegroundColorSpan(dotColor), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             if (labelEnd > 0) {
-                s.setSpan(new AbsoluteSizeSpan(11, true), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                s.setSpan(new AbsoluteSizeSpan(13, true), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 s.setSpan(new StyleSpan(Typeface.BOLD), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             if (valueStart < text.length()) {
-                float valueSp = fitMetricValueSp(target, value, 18.5f, 9.5f);
+                float valueSp = fitMetricValueSp(target, value, 19.5f, 9.5f);
                 s.setSpan(new AbsoluteSizeSpan(Math.round(valueSp), true), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 s.setSpan(new StyleSpan(Typeface.BOLD), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
