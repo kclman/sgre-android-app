@@ -733,7 +733,9 @@ public class MainActivity extends Activity {
             int labelEnd = Math.max(0, text.indexOf('\n'));
             int valueStart = Math.min(text.length(), labelEnd + 1);
             if (labelEnd > 0) {
-                float labelSp = fitMetricTextSp(target, label, 14.0f, 9.0f);
+                // Stage15_8: keep labels visually consistent. Use a fixed preferred size and only shrink
+                // when the label is too long for the metric cell, so "280 SOC" and "314 SOC" stay identical.
+                float labelSp = fitMetricLabelSp(target, label, 13.2f, 10.5f);
                 s.setSpan(new AbsoluteSizeSpan(Math.round(labelSp), true), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 s.setSpan(new StyleSpan(Typeface.BOLD), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
@@ -774,6 +776,20 @@ public class MainActivity extends Activity {
         for (float sp = maxSp; sp >= minSp; sp -= 0.5f) {
             p.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics()));
             if (p.measureText(value == null ? "" : value) <= available) return sp;
+        }
+        return minSp;
+    }
+
+    private float fitMetricLabelSp(TextView target, String label, float preferredSp, float minSp) {
+        int available = target.getWidth() - target.getPaddingLeft() - target.getPaddingRight();
+        if (available <= dp(12)) return preferredSp;
+        Paint p = new Paint(target.getPaint());
+        String text = label == null ? "" : label;
+        p.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, preferredSp, getResources().getDisplayMetrics()));
+        if (p.measureText(text) <= available) return preferredSp;
+        for (float sp = preferredSp - 0.5f; sp >= minSp; sp -= 0.5f) {
+            p.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics()));
+            if (p.measureText(text) <= available) return sp;
         }
         return minSp;
     }
