@@ -724,20 +724,16 @@ public class MainActivity extends Activity {
         } else if ("可連線".equals(value)) {
             target.setText(value);
         } else {
-            // Stage15_4: card width follows screen width, value text auto-fits each metric cell.
+            // Stage15_7: remove color dots so label/value stay visually centered; value text auto-fits each metric cell.
             // Keep label/value stacked, keep value on one visual line, and use the largest safe font size.
             String safeLabel = noBreakLabel(label);
             String safeValue = noBreakValue(value);
-            String text = "• " + safeLabel + "\n" + safeValue;
+            String text = safeLabel + "\n" + safeValue;
             SpannableString s = new SpannableString(text);
-            int dotColor = Color.rgb(76, 195, 112);
-            Object tag = target.getTag();
-            if (tag instanceof Integer) dotColor = (Integer) tag;
             int labelEnd = Math.max(0, text.indexOf('\n'));
             int valueStart = Math.min(text.length(), labelEnd + 1);
-            s.setSpan(new ForegroundColorSpan(dotColor), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             if (labelEnd > 0) {
-                float labelSp = fitMetricTextSp(target, "• " + label, 14.0f, 9.0f);
+                float labelSp = fitMetricTextSp(target, label, 14.0f, 9.0f);
                 s.setSpan(new AbsoluteSizeSpan(Math.round(labelSp), true), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 s.setSpan(new StyleSpan(Typeface.BOLD), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
