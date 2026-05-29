@@ -638,26 +638,11 @@ public class MainActivity extends Activity {
         TextView name = new TextView(this);
         name.setText(d.name.length() > 0 ? d.name : "未命名設備");
         name.setTextColor(Color.rgb(42, 54, 68));
-        name.setTextSize(20);
+        name.setTextSize(17);
         name.setIncludeFontPadding(false);
         name.setTypeface(null, Typeface.BOLD);
         name.setSingleLine(true);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
-
-        CheckBox def = new CheckBox(this);
-        def.setChecked(d.isDefault);
-        def.setText("預設");
-        def.setTextSize(13);
-        def.setIncludeFontPadding(false);
-        def.setOnClickListener(v -> {
-            if (((CheckBox) v).isChecked()) {
-                DeviceStore.setDefault(this, d.id);
-            } else {
-                DeviceStore.clearDefault(this);
-            }
-            renderDevices();
-        });
-        row.addView(def);
 
         box.addView(row);
 
@@ -679,7 +664,7 @@ public class MainActivity extends Activity {
 
         TextView alarmStatus = new TextView(this);
         alarmStatus.setTextColor(Color.rgb(214, 65, 65));
-        alarmStatus.setTextSize(14);
+        alarmStatus.setTextSize(12);
         alarmStatus.setTypeface(null, Typeface.BOLD);
         alarmStatus.setIncludeFontPadding(false);
         alarmStatus.setSingleLine(true);
@@ -706,14 +691,14 @@ public class MainActivity extends Activity {
         t.setTag(Integer.valueOf(dotColor));
         setMetricText(t, label, value);
         t.setTextColor(Color.rgb(58, 70, 84));
-        t.setTextSize(13);
+        t.setTextSize(11);
         t.setTypeface(null, Typeface.BOLD);
         t.setIncludeFontPadding(false);
         t.setSingleLine(false);
         t.setMaxLines(3);
         t.setGravity(Gravity.START);
-        t.setLineSpacing(0f, 0.92f);
-        t.setPadding(dp(2), dp(2), dp(3), dp(5));
+        t.setLineSpacing(0f, 0.88f);
+        t.setPadding(dp(1), dp(1), dp(2), dp(4));
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
         lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
@@ -740,10 +725,10 @@ public class MainActivity extends Activity {
             int valueStart = Math.min(text.length(), labelEnd + 1);
             s.setSpan(new ForegroundColorSpan(dotColor), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             if (labelEnd > 0) {
-                s.setSpan(new RelativeSizeSpan(0.86f), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                s.setSpan(new RelativeSizeSpan(0.82f), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             if (valueStart < text.length()) {
-                s.setSpan(new RelativeSizeSpan(1.20f), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                s.setSpan(new RelativeSizeSpan(1.08f), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 s.setSpan(new StyleSpan(Typeface.BOLD), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             target.setText(s);
@@ -1207,7 +1192,8 @@ public class MainActivity extends Activity {
     private void showDeviceActionDialog(DeviceStore.Device d) {
         String local = (d.localUrl == null || d.localUrl.trim().length() == 0) ? "未設定" : d.localUrl;
         String remote = (d.remoteUrl == null || d.remoteUrl.trim().length() == 0) ? "未設定" : d.remoteUrl;
-        String info = getDeviceRuntime(d)
+        String info = (d.isDefault ? "目前狀態：預設設備\n\n" : "")
+                + getDeviceRuntime(d)
                 + "\n\n設定內網：" + local
                 + "\n設定外網：" + remote;
 
