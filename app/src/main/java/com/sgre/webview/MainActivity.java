@@ -21,6 +21,8 @@ import android.net.Uri;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.StyleSpan;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -589,16 +591,44 @@ public class MainActivity extends Activity {
             return;
         }
 
+        LinearLayout currentRow = null;
+        int col = 0;
         for (DeviceStore.Device d : devices) {
-            addDeviceCard(d);
+            if (col == 0) {
+                currentRow = new LinearLayout(this);
+                currentRow.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+                rowLp.setMargins(0, 0, 0, dp(12));
+                listLayout.addView(currentRow, rowLp);
+            }
+
+            LinearLayout card = createDeviceCard(d);
+            LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(0, -2, 1);
+            if (col == 0) {
+                cardLp.setMargins(0, 0, dp(6), 0);
+            } else {
+                cardLp.setMargins(dp(6), 0, 0, 0);
+            }
+            currentRow.addView(card, cardLp);
+
+            col++;
+            if (col >= 2) col = 0;
+        }
+
+        if (col == 1 && currentRow != null) {
+            TextView placeholder = new TextView(this);
+            placeholder.setVisibility(View.INVISIBLE);
+            LinearLayout.LayoutParams phLp = new LinearLayout.LayoutParams(0, 1, 1);
+            phLp.setMargins(dp(6), 0, 0, 0);
+            currentRow.addView(placeholder, phLp);
         }
     }
 
-    private void addDeviceCard(DeviceStore.Device d) {
+    private LinearLayout createDeviceCard(DeviceStore.Device d) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         // Compact card layout: keep the device list dense like the earlier working version.
-        box.setPadding(dp(12), dp(10), dp(12), dp(10));
+        box.setPadding(dp(10), dp(10), dp(10), dp(10));
         box.setBackground(bg(Color.rgb(248, 250, 252), 22));
 
         LinearLayout row = new LinearLayout(this);
@@ -608,7 +638,7 @@ public class MainActivity extends Activity {
         TextView name = new TextView(this);
         name.setText(d.name.length() > 0 ? d.name : "未命名設備");
         name.setTextColor(Color.rgb(42, 54, 68));
-        name.setTextSize(22);
+        name.setTextSize(20);
         name.setIncludeFontPadding(false);
         name.setTypeface(null, Typeface.BOLD);
         name.setSingleLine(true);
@@ -617,7 +647,7 @@ public class MainActivity extends Activity {
         CheckBox def = new CheckBox(this);
         def.setChecked(d.isDefault);
         def.setText("預設");
-        def.setTextSize(14);
+        def.setTextSize(13);
         def.setIncludeFontPadding(false);
         def.setOnClickListener(v -> {
             if (((CheckBox) v).isChecked()) {
@@ -663,14 +693,12 @@ public class MainActivity extends Activity {
             return true;
         });
 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, 0, 0, dp(12));
-        listLayout.addView(box, lp);
         if (d.id != null && d.id.length() > 0) {
             cardWidgets.put(d.id, new CardWidgets(d, box, voltage, power, energy, load, alarmStatus));
         }
 
         fetchSummary(d, box, voltage, power, energy, load, alarmStatus, null);
+        return box;
     }
 
     private TextView metric(String label, String value, int dotColor) {
@@ -678,11 +706,14 @@ public class MainActivity extends Activity {
         t.setTag(Integer.valueOf(dotColor));
         setMetricText(t, label, value);
         t.setTextColor(Color.rgb(58, 70, 84));
-        t.setTextSize(15);
+        t.setTextSize(13);
         t.setTypeface(null, Typeface.BOLD);
         t.setIncludeFontPadding(false);
-        t.setSingleLine(true);
-        t.setPadding(dp(2), dp(2), dp(3), dp(2));
+        t.setSingleLine(false);
+        t.setMaxLines(3);
+        t.setGravity(Gravity.START);
+        t.setLineSpacing(0f, 0.92f);
+        t.setPadding(dp(2), dp(2), dp(3), dp(5));
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
         lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
@@ -698,12 +729,23 @@ public class MainActivity extends Activity {
         } else if ("可連線".equals(value)) {
             target.setText(value);
         } else {
-            String text = "• " + label + " " + value;
+            // Stage15_1: factory-like compact card style.
+            // Label and value are stacked vertically to avoid clipping in two-column cards.
+            String text = "• " + label + "\n" + value;
             SpannableString s = new SpannableString(text);
             int dotColor = Color.rgb(76, 195, 112);
             Object tag = target.getTag();
             if (tag instanceof Integer) dotColor = (Integer) tag;
+            int labelEnd = Math.max(0, text.indexOf('\n'));
+            int valueStart = Math.min(text.length(), labelEnd + 1);
             s.setSpan(new ForegroundColorSpan(dotColor), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            if (labelEnd > 0) {
+                s.setSpan(new RelativeSizeSpan(0.86f), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (valueStart < text.length()) {
+                s.setSpan(new RelativeSizeSpan(1.20f), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                s.setSpan(new StyleSpan(Typeface.BOLD), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
             target.setText(s);
         }
     }
