@@ -633,7 +633,7 @@ public class MainActivity extends Activity {
         // Compact card layout: keep the device list dense like the earlier working version.
         box.setPadding(dp(10), dp(10), dp(10), dp(10));
         // Stage15_5: keep every home card visually the same size, even cards that only show "可連線".
-        box.setMinimumHeight(dp(136));
+        box.setMinimumHeight(dp(154));
         box.setBackground(bg(Color.rgb(248, 250, 252), 22));
 
         LinearLayout row = new LinearLayout(this);
@@ -695,13 +695,14 @@ public class MainActivity extends Activity {
         TextView t = new TextView(this);
         t.setTag(Integer.valueOf(dotColor));
         t.setTextColor(Color.rgb(58, 70, 84));
-        t.setTextSize(13);
+        t.setTextSize(12);
         t.setTypeface(null, Typeface.BOLD);
         t.setIncludeFontPadding(false);
         t.setSingleLine(false);
         t.setMaxLines(2);
+        t.setMinHeight(dp(52));
         t.setGravity(Gravity.CENTER);
-        t.setLineSpacing(0f, 0.94f);
+        t.setLineSpacing(0f, 0.91f);
         t.setPadding(dp(1), dp(1), dp(2), dp(4));
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
@@ -725,8 +726,9 @@ public class MainActivity extends Activity {
         } else {
             // Stage15_4: card width follows screen width, value text auto-fits each metric cell.
             // Keep label/value stacked, keep value on one visual line, and use the largest safe font size.
+            String safeLabel = noBreakLabel(label);
             String safeValue = noBreakValue(value);
-            String text = "• " + label + "\n" + safeValue;
+            String text = "• " + safeLabel + "\n" + safeValue;
             SpannableString s = new SpannableString(text);
             int dotColor = Color.rgb(76, 195, 112);
             Object tag = target.getTag();
@@ -735,11 +737,12 @@ public class MainActivity extends Activity {
             int valueStart = Math.min(text.length(), labelEnd + 1);
             s.setSpan(new ForegroundColorSpan(dotColor), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             if (labelEnd > 0) {
-                s.setSpan(new AbsoluteSizeSpan(13, true), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                float labelSp = fitMetricTextSp(target, "• " + label, 14.0f, 9.0f);
+                s.setSpan(new AbsoluteSizeSpan(Math.round(labelSp), true), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 s.setSpan(new StyleSpan(Typeface.BOLD), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             if (valueStart < text.length()) {
-                float valueSp = fitMetricValueSp(target, value, 19.5f, 9.5f);
+                float valueSp = fitMetricTextSp(target, value, 17.2f, 9.5f);
                 s.setSpan(new AbsoluteSizeSpan(Math.round(valueSp), true), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 s.setSpan(new StyleSpan(Typeface.BOLD), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
@@ -753,6 +756,11 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String noBreakLabel(String label) {
+        if (label == null) return "";
+        return label.replace(" ", "\u00A0");
+    }
+
     private String noBreakValue(String value) {
         if (value == null || value.length() <= 1) return value == null ? "" : value;
         StringBuilder sb = new StringBuilder();
@@ -763,13 +771,13 @@ public class MainActivity extends Activity {
         return sb.toString();
     }
 
-    private float fitMetricValueSp(TextView target, String value, float maxSp, float minSp) {
+    private float fitMetricTextSp(TextView target, String value, float maxSp, float minSp) {
         int available = target.getWidth() - target.getPaddingLeft() - target.getPaddingRight();
         if (available <= dp(12)) return maxSp;
         Paint p = new Paint(target.getPaint());
         for (float sp = maxSp; sp >= minSp; sp -= 0.5f) {
             p.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics()));
-            if (p.measureText(value) <= available) return sp;
+            if (p.measureText(value == null ? "" : value) <= available) return sp;
         }
         return minSp;
     }
