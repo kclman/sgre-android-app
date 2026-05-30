@@ -915,15 +915,125 @@ public class MainActivity extends Activity {
                 String remoteBase = originOnly(d.remoteUrl);
                 boolean usingRemote = false;
 
-                String alarm = fetch(localBase + "/api/alarm", 900, 1200);
-                if (alarm.length() == 0 && remoteBase != null && remoteBase.trim().length() > 0) {
-                    alarm = fetch(remoteBase + "/api/alarm", 1200, 1600);
-                    if (alarm.length() > 0) usingRemote = true;
+                // Stage APP Live-First: 首頁卡片先抓 /api/live，讓功率/SOC/電壓/負載先更新；
+                // 告警改成第二階段背景補上，避免 /api/alarm 拖慢卡片數字。
+                String live = fetch(localBase + "/api/live", 900, 1300);
+                if (live.length() == 0 && remoteBase != null && remoteBase.trim().length() > 0) {
+                    live = fetch(remoteBase + "/api/live", 1000, 1600);
+                    if (live.length() > 0) usingRemote = true;
                 }
+
+                if (live.length() > 0) {
+                    online = true;
+                    activeUrlLabel = usingRemote ? "目前外網：" + shortUrl(d.remoteUrl) : "目前內網：" + shortUrl(d.localUrl);
+
+                    String pv = firstNonEmpty(
+                            liveVal(live, "v_pv_total_power"),
+                            liveVal(live, "pv_total_power"),
+                            liveVal(live, "v_pv_power"),
+                            liveVal(live, "PV_Vsum"),
+                            liveVal(live, "pv_sum_power"),
+                            liveVal(live, "v_pv_sum_power"));
+
+                    String batterySoc = firstNonEmpty(
+                            liveVal(live, "v_battery_soc"),
+                            liveVal(live, "battery_soc"),
+                            liveVal(live, "v_batt_soc"),
+                            liveVal(live, "batt_soc"),
+                            liveVal(live, "v_soc"),
+                            liveVal(live, "soc"),
+                            liveVal(live, "SOC"),
+                            liveVal(live, "BattSoc"),
+                            liveVal(live, "v_batt_state_of_charge"),
+                            liveVal(live, "batt_state_of_charge"),
+                            liveVal(live, "state_of_charge"),
+                            liveVal(live, "7532"),
+                            liveVal(live, "v_7532"));
+
+                    String battVoltLive = firstNonEmpty(
+                            liveVal(live, "v_batt_voltage"),
+                            liveVal(live, "batt_voltage"),
+                            liveVal(live, "v_battery_voltage"),
+                            liveVal(live, "battery_voltage"),
+                            liveVal(live, "v_batt_v"),
+                            liveVal(live, "batt_v"),
+                            liveVal(live, "BattVolt"),
+                            liveVal(live, "7530"),
+                            liveVal(live, "v_7530"));
+
+                    String upsLoad = firstNonEmpty(
+                            liveVal(live, "v_ac_out_sum"),
+                            liveVal(live, "ac_out_sum"),
+                            liveVal(live, "AC_Out_Sum"),
+                            liveVal(live, "v_output_total_power"),
+                            liveVal(live, "output_total_power"),
+                            liveVal(live, "v_out_total_power"),
+                            liveVal(live, "out_total_power"),
+                            liveVal(live, "v_backup_load_power"),
+                            liveVal(live, "backup_load_power"),
+                            liveVal(live, "v_ups_load_power"),
+                            liveVal(live, "ups_load_power"));
+
+                    String gridLoad = firstNonEmpty(
+                            liveVal(live, "v_grid_load_power"),
+                            liveVal(live, "grid_load_power"),
+                            liveVal(live, "v_normal_load_power"),
+                            liveVal(live, "normal_load_power"),
+                            liveVal(live, "v_ct_sum"),
+                            liveVal(live, "ct_sum"),
+                            liveVal(live, "CT_sum"),
+                            liveVal(live, "v_grid_total_power"),
+                            liveVal(live, "grid_total_power"),
+                            liveVal(live, "v_line_sum_power"),
+                            liveVal(live, "line_sum_power"),
+                            liveVal(live, "v_line_total_power"),
+                            liveVal(live, "line_total_power"));
+
+                    String totalLoad = sumAbsNumbers(gridLoad, upsLoad);
+
+                    if (pv.length() > 0) p = intText(pv) + "W";
+                    if (batterySoc.length() > 0) e = intText(batterySoc) + "%";
+                    if (battVoltLive.length() > 0) v = oneDecimalText(battVoltLive) + "V";
+                    if (totalLoad.length() > 0) l = intText(totalLoad) + "W";
+
+                    final String liveV = v;
+                    final String liveP = p;
+                    final String liveE = e;
+                    final String liveL = l;
+                    final String liveLabelP = labelP;
+                    final String liveLabelE = labelE;
+                    final String liveLabelV = labelV;
+                    final String liveLabelL = labelL;
+                    final String liveUrl = activeUrlLabel;
+                    runOnUiThread(() -> {
+                        setMetricText(power, liveLabelP, liveP);
+                        setMetricText(energy, liveLabelE, liveE);
+                        setMetricText(voltage, liveLabelV, liveV);
+                        setMetricText(load, liveLabelL, liveL);
+                        saveDeviceRuntime(d, liveUrl);
+                        if (urlLabel != null) urlLabel.setText("");
+                        card.setAlpha(1f);
+                        card.setBackground(bg(Color.rgb(248, 250, 252), 22));
+                    });
+                }
+
+                // 第二階段才抓告警。若 /api/live 已成功，告警只走同一條連線路徑，避免多敲一次外網。
+                String alarm = "";
+                if (online) {
+                    alarm = fetch((usingRemote ? remoteBase : localBase) + "/api/alarm", 700, 1100);
+                } else {
+                    alarm = fetch(localBase + "/api/alarm", 800, 1100);
+                    if (alarm.length() == 0 && remoteBase != null && remoteBase.trim().length() > 0) {
+                        alarm = fetch(remoteBase + "/api/alarm", 1000, 1500);
+                        if (alarm.length() > 0) usingRemote = true;
+                    }
+                }
+
                 if (alarm.length() > 0) {
                     online = true;
+                    activeUrlLabel = usingRemote ? "目前外網：" + shortUrl(d.remoteUrl) : "目前內網：" + shortUrl(d.localUrl);
                     String battVolt = num(alarm, "batt_v");
-                    if (battVolt.length() > 0) v = oneDecimalText(battVolt) + "V";
+                    if (!hasValue(v) && battVolt.length() > 0) v = oneDecimalText(battVolt) + "V";
                     if (jsonBool(alarm, "alarm")) {
                         String levelText = jsonString(alarm, "level_text");
                         String mainText = firstNonEmpty(jsonString(alarm, "main"), jsonString(alarm, "msg"));
@@ -934,6 +1044,33 @@ public class MainActivity extends Activity {
                         if (mainText.startsWith(levelText + "｜")) {
                             alarmLine = mainText;
                         } else {
+                            alarmLine = levelText + "｜" + mainText;
+                        }
+                    }
+                }
+
+                // Stage14.3: connection status must mean the device page is reachable, not only that /api/live or /api/alarm returns JSON.
+                // Some external/WAN devices can open normally but expose the API through another path or block API probing.
+                // In that case keep the card active and show 「可連線」 instead of marking it gray.
+                if (!online) {
+                    String body = "";
+                    if (d.localUrl != null && d.localUrl.trim().length() > 0) {
+                        body = fetch(DeviceStore.normalize(d.localUrl), 1000, 1500);
+                        if (body.length() > 0) activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
+                    }
+                    if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
+                        body = fetch(DeviceStore.normalize(d.remoteUrl), 1400, 2400);
+                        if (body.length() > 0) activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
+                    }
+                    if (body.length() > 0) {
+                        online = true;
+                        v = "可連線";
+                        p = "";
+                        e = "";
+                        l = "";
+                    }
+                }
+            } else {
                             alarmLine = levelText + "｜" + mainText;
                         }
                     }
