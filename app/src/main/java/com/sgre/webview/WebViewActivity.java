@@ -48,6 +48,8 @@ public class WebViewActivity extends Activity {
     private String pendingAutoRuleExportName = "";
     private String pendingAutoRuleExportJson = "";
     private ValueCallback<Uri[]> webFilePathCallback;
+    private String explicitOpenUrl = "";
+    private boolean singleUrlMode = false;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -55,6 +57,8 @@ public class WebViewActivity extends Activity {
         setupSystemBars();
 
         String id = getIntent().getStringExtra("id");
+        explicitOpenUrl = DeviceStore.normalize(getIntent().getStringExtra("url"));
+        singleUrlMode = explicitOpenUrl != null && explicitOpenUrl.trim().length() > 0;
         device = DeviceStore.get(this, id);
         if (device == null) {
             Toast.makeText(this, "找不到設備", Toast.LENGTH_SHORT).show();
@@ -464,6 +468,14 @@ public class WebViewActivity extends Activity {
     }
 
     private void loadBestAvailable() {
+        if (singleUrlMode && explicitOpenUrl != null && explicitOpenUrl.trim().length() > 0) {
+            final String target = explicitOpenUrl.trim();
+            if (loadingText != null) loadingText.setVisibility(View.GONE);
+            applyViewInsetForUrl(target);
+            webView.loadUrl(target);
+            return;
+        }
+
         final String local = DeviceStore.normalize(device.localUrl);
         final String remote = DeviceStore.normalize(device.remoteUrl);
 
@@ -524,6 +536,7 @@ public class WebViewActivity extends Activity {
     }
 
     private void tryRemoteFallback(String toast) {
+        if (singleUrlMode) return;
         if (triedRemote) return;
         String remote = DeviceStore.normalize(device.remoteUrl);
         if (remote.length() == 0) return;

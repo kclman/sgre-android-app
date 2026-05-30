@@ -896,6 +896,52 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void saveDeviceRuntime(DeviceStore.Device d, String status, String openUrl) {
+        try {
+            if (d == null || d.id == null) return;
+            SharedPreferences.Editor e = getSharedPreferences("sgre_device_runtime", MODE_PRIVATE).edit()
+                    .putString(d.id + "_status", status == null ? "" : status)
+                    .putLong(d.id + "_time", System.currentTimeMillis());
+            if (openUrl != null && openUrl.trim().length() > 0) {
+                e.putString(d.id + "_open_url", openUrl.trim());
+            }
+            e.apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String getDeviceOpenUrl(DeviceStore.Device d) {
+        try {
+            if (d == null || d.id == null) return "";
+            SharedPreferences p = getSharedPreferences("sgre_device_runtime", MODE_PRIVATE);
+            String u = p.getString(d.id + "_open_url", "");
+            return u == null ? "" : u;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private String openPageUrl(String base, String rawPreferred) {
+        try {
+            String b = originOnly(base);
+            if (b == null || b.trim().length() == 0) return "";
+            String path = "/phone";
+            if (rawPreferred != null && rawPreferred.trim().length() > 0) {
+                URL u = new URL(DeviceStore.normalize(rawPreferred));
+                String p = u.getPath();
+                if (p != null && p.trim().length() > 0 && !"/".equals(p.trim())) {
+                    path = p.trim();
+                }
+            }
+            if (!path.startsWith("/")) path = "/" + path;
+            return b + path;
+        } catch (Exception e) {
+            String b = originOnly(base);
+            if (b == null || b.trim().length() == 0) return "";
+            return b + "/phone";
+        }
+    }
+
     private void fetchSummary(DeviceStore.Device d, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load, TextView alarmStatus, TextView urlLabel) {
         new Thread(() -> {
             boolean online = false;
@@ -914,13 +960,20 @@ public class MainActivity extends Activity {
                 String localBase = apiBase(d);
                 String remoteBase = originOnly(d.remoteUrl);
                 boolean usingRemote = false;
+                String liveOpenUrl = "";
 
                 // Stage APP Live-First: 首頁卡片先抓 /api/live，讓功率/SOC/電壓/負載先更新；
                 // 告警改成第二階段背景補上，避免 /api/alarm 拖慢卡片數字。
                 String live = fetch(localBase + "/api/live", 900, 1300);
+                if (live.length() > 0) {
+                    liveOpenUrl = openPageUrl(localBase, d.localUrl);
+                }
                 if (live.length() == 0 && remoteBase != null && remoteBase.trim().length() > 0) {
                     live = fetch(remoteBase + "/api/live", 1000, 1600);
-                    if (live.length() > 0) usingRemote = true;
+                    if (live.length() > 0) {
+                        usingRemote = true;
+                        liveOpenUrl = openPageUrl(remoteBase, d.remoteUrl);
+                    }
                 }
 
                 if (live.length() > 0) {
@@ -1005,12 +1058,13 @@ public class MainActivity extends Activity {
                     final String liveLabelV = labelV;
                     final String liveLabelL = labelL;
                     final String liveUrl = activeUrlLabel;
+                    final String liveOpen = liveOpenUrl;
                     runOnUiThread(() -> {
                         setMetricText(power, liveLabelP, liveP);
                         setMetricText(energy, liveLabelE, liveE);
                         setMetricText(voltage, liveLabelV, liveV);
                         setMetricText(load, liveLabelL, liveL);
-                        saveDeviceRuntime(d, liveUrl);
+                        saveDeviceRuntime(d, liveUrl, liveOpen);
                         if (urlLabel != null) urlLabel.setText("");
                         card.setAlpha(1f);
                         card.setBackground(bg(Color.rgb(248, 250, 252), 22));
@@ -1025,7 +1079,12 @@ public class MainActivity extends Activity {
                     alarm = fetch(localBase + "/api/alarm", 800, 1100);
                     if (alarm.length() == 0 && remoteBase != null && remoteBase.trim().length() > 0) {
                         alarm = fetch(remoteBase + "/api/alarm", 1000, 1500);
-                        if (alarm.length() > 0) usingRemote = true;
+                        if (alarm.length() > 0) {
+                            usingRemote = true;
+                            liveOpenUrl = openPageUrl(remoteBase, d.remoteUrl);
+                        }
+                    } else if (alarm.length() > 0) {
+                        liveOpenUrl = openPageUrl(localBase, d.localUrl);
                     }
                 }
 
@@ -1047,6 +1106,9 @@ public class MainActivity extends Activity {
                             alarmLine = levelText + "｜" + mainText;
                         }
                     }
+                    if (liveOpenUrl != null && liveOpenUrl.trim().length() > 0) {
+                        saveDeviceRuntime(d, activeUrlLabel, liveOpenUrl);
+                    }
                 }
 
                 // Stage14.3: connection status must mean the device page is reachable, not only that /api/live or /api/alarm returns JSON.
@@ -1056,11 +1118,17 @@ public class MainActivity extends Activity {
                     String body = "";
                     if (d.localUrl != null && d.localUrl.trim().length() > 0) {
                         body = fetch(DeviceStore.normalize(d.localUrl), 1000, 1500);
-                        if (body.length() > 0) activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
+                        if (body.length() > 0) {
+                            activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
+                            liveOpenUrl = DeviceStore.normalize(d.localUrl);
+                        }
                     }
                     if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
                         body = fetch(DeviceStore.normalize(d.remoteUrl), 1400, 2400);
-                        if (body.length() > 0) activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
+                        if (body.length() > 0) {
+                            activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
+                            liveOpenUrl = DeviceStore.normalize(d.remoteUrl);
+                        }
                     }
                     if (body.length() > 0) {
                         online = true;
@@ -1068,6 +1136,7 @@ public class MainActivity extends Activity {
                         p = "";
                         e = "";
                         l = "";
+                        saveDeviceRuntime(d, activeUrlLabel, liveOpenUrl);
                     }
                 }
 
@@ -1274,6 +1343,20 @@ public class MainActivity extends Activity {
     private void openDevice(DeviceStore.Device d) {
         Intent i = new Intent(this, WebViewActivity.class);
         i.putExtra("id", d.id);
+
+        // Stage APP Click-Single-URL: 卡片點擊只開最近一次成功來源，避免 WebView 先內網後外網造成 HTML 串流被取消。
+        String openUrl = getDeviceOpenUrl(d);
+        if (openUrl == null || openUrl.trim().length() == 0) {
+            if (d.localUrl != null && d.localUrl.trim().length() > 0) {
+                openUrl = DeviceStore.normalize(d.localUrl);
+            } else {
+                openUrl = DeviceStore.normalize(d.remoteUrl);
+            }
+        }
+        if (openUrl != null && openUrl.trim().length() > 0) {
+            i.putExtra("url", openUrl.trim());
+        }
+
         startActivity(i);
     }
 
