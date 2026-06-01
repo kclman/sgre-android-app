@@ -1185,14 +1185,14 @@ public class MainActivity extends Activity {
                             labelE = "SOC";
                             labelV = "電壓";
                             labelL = "電流";
-                            String power = firstNonEmpty(firstPackNumber(live, "power"), cardItemNumber(live, "功率"), cardItemNumber(live, "總功率"));
-                            String soc = firstNonEmpty(firstPackNumber(live, "soc"), cardItemNumber(live, "SOC"), cardItemNumber(live, "平均SOC"));
-                            String voltage = firstNonEmpty(firstPackNumber(live, "voltage"), cardItemNumber(live, "電壓"));
-                            String current = firstNonEmpty(firstPackNumber(live, "current"), cardItemNumber(live, "電流"));
-                            p = power.length() > 0 ? intText(power) + "W" : "--";
-                            e = soc.length() > 0 ? oneDecimalText(soc) + "%" : "--";
-                            v = voltage.length() > 0 ? twoDecimalText(voltage) + "V" : "--";
-                            l = current.length() > 0 ? oneDecimalText(current) + "A" : "--";
+                            String bmsPowerText = firstNonEmpty(firstPackNumber(live, "power"), cardItemNumber(live, "功率"), cardItemNumber(live, "總功率"));
+                            String bmsSocText = firstNonEmpty(firstPackNumber(live, "soc"), cardItemNumber(live, "SOC"), cardItemNumber(live, "平均SOC"));
+                            String bmsVoltageText = firstNonEmpty(firstPackNumber(live, "voltage"), cardItemNumber(live, "電壓"));
+                            String bmsCurrentText = firstNonEmpty(firstPackNumber(live, "current"), cardItemNumber(live, "電流"));
+                            p = bmsPowerText.length() > 0 ? intText(bmsPowerText) + "W" : "--";
+                            e = bmsSocText.length() > 0 ? oneDecimalText(bmsSocText) + "%" : "--";
+                            v = bmsVoltageText.length() > 0 ? twoDecimalText(bmsVoltageText) + "V" : "--";
+                            l = bmsCurrentText.length() > 0 ? oneDecimalText(bmsCurrentText) + "A" : "--";
                         }
                     } else {
                         labelP = "在線";
