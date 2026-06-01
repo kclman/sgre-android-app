@@ -11,6 +11,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
@@ -20,7 +21,11 @@ import android.os.Looper;
 import android.net.Uri;
 import android.text.SpannableString;
 import android.text.Spanned;
+import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.StyleSpan;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -38,6 +43,8 @@ import android.widget.TextView;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
@@ -47,6 +54,7 @@ import java.util.Map;
 
 public class MainActivity extends Activity {
     private static final int REQ_IMPORT_DEVICES_FILE = 7101;
+    private static final int REQ_EXPORT_DEVICES_FILE = 7102;
     private static final long HOME_SGRE_REFRESH_MS = 10000L;
     private LinearLayout listLayout;
     private boolean autoOpened = false;
@@ -279,28 +287,47 @@ public class MainActivity extends Activity {
 
 
     private void showExportDevicesDialog() {
-        String data = DeviceStore.exportJson(this);
+        createExportFile();
+    }
 
-        EditText output = new EditText(this);
-        output.setText(data);
-        output.setMinLines(8);
-        output.setSelectAllOnFocus(true);
+    private void createExportFile() {
+        try {
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_TITLE, "sgre_devices_backup.sgre.json");
+            startActivityForResult(intent, REQ_EXPORT_DEVICES_FILE);
+        } catch (Exception e) {
+            new AlertDialog.Builder(this)
+                    .setTitle("無法建立設備檔案")
+                    .setMessage("檔案選擇器無法開啟，請確認手機已安裝檔案管理器。")
+                    .setPositiveButton("確定", null)
+                    .show();
+        }
+    }
 
-        new AlertDialog.Builder(this)
-                .setTitle("導出設備檔案")
-                .setMessage("以下是設備備份資料，可複製保存為 sgre_devices_backup.json。")
-                .setView(output)
-                .setPositiveButton("複製", (dialog, which) -> {
-                    try {
-                        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                        if (cm != null) {
-                            cm.setPrimaryClip(ClipData.newPlainText("SGRE devices", DeviceStore.exportJson(this)));
-                        }
-                    } catch (Exception ignored) {
-                    }
-                })
-                .setNegativeButton("關閉", null)
-                .show();
+    private void exportDevicesToUri(Uri uri) {
+        try {
+            OutputStream os = getContentResolver().openOutputStream(uri, "wt");
+            if (os == null) throw new Exception("openOutputStream failed");
+
+            OutputStreamWriter writer = new OutputStreamWriter(os);
+            writer.write(DeviceStore.exportJson(this));
+            writer.flush();
+            writer.close();
+
+            new AlertDialog.Builder(this)
+                    .setTitle("導出完成")
+                    .setMessage("設備清單已存成檔案。之後可用「匯入設備檔案」選取此檔案還原。")
+                    .setPositiveButton("確定", null)
+                    .show();
+        } catch (Exception e) {
+            new AlertDialog.Builder(this)
+                    .setTitle("導出失敗")
+                    .setMessage("無法寫入設備檔案，請重新選擇儲存位置。")
+                    .setPositiveButton("確定", null)
+                    .show();
+        }
     }
 
 
@@ -319,7 +346,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             new AlertDialog.Builder(this)
                     .setTitle("無法開啟檔案選擇器")
-                    .setMessage("檔案選擇器無法開啟時，可重新安裝檔案管理器，或先用舊版貼上匯入。")
+                    .setMessage("檔案選擇器無法開啟，請確認手機已安裝檔案管理器。")
                     .setPositiveButton("確定", null)
                     .show();
         }
@@ -332,6 +359,12 @@ public class MainActivity extends Activity {
             Uri uri = data.getData();
             if (uri == null) return;
             importDevicesFromUri(uri);
+            return;
+        }
+        if (requestCode == REQ_EXPORT_DEVICES_FILE && resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri == null) return;
+            exportDevicesToUri(uri);
         }
     }
 
@@ -366,7 +399,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             new AlertDialog.Builder(this)
                     .setTitle("匯入失敗")
-                    .setMessage("無法讀取檔案，請確認檔案可開啟，或改用貼上匯入。")
+                    .setMessage("無法讀取檔案，請確認檔案可開啟。")
                     .setPositiveButton("確定", null)
                     .show();
         }
@@ -561,16 +594,46 @@ public class MainActivity extends Activity {
             return;
         }
 
+        LinearLayout currentRow = null;
+        int col = 0;
         for (DeviceStore.Device d : devices) {
-            addDeviceCard(d);
+            if (col == 0) {
+                currentRow = new LinearLayout(this);
+                currentRow.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+                rowLp.setMargins(0, 0, 0, dp(12));
+                listLayout.addView(currentRow, rowLp);
+            }
+
+            LinearLayout card = createDeviceCard(d);
+            LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(0, -2, 1);
+            if (col == 0) {
+                cardLp.setMargins(0, 0, dp(6), 0);
+            } else {
+                cardLp.setMargins(dp(6), 0, 0, 0);
+            }
+            currentRow.addView(card, cardLp);
+
+            col++;
+            if (col >= 2) col = 0;
+        }
+
+        if (col == 1 && currentRow != null) {
+            TextView placeholder = new TextView(this);
+            placeholder.setVisibility(View.INVISIBLE);
+            LinearLayout.LayoutParams phLp = new LinearLayout.LayoutParams(0, 1, 1);
+            phLp.setMargins(dp(6), 0, 0, 0);
+            currentRow.addView(placeholder, phLp);
         }
     }
 
-    private void addDeviceCard(DeviceStore.Device d) {
+    private LinearLayout createDeviceCard(DeviceStore.Device d) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         // Compact card layout: keep the device list dense like the earlier working version.
-        box.setPadding(dp(12), dp(10), dp(12), dp(10));
+        box.setPadding(dp(10), dp(10), dp(10), dp(10));
+        // Stage15_5: keep every home card visually the same size, even cards that only show "可連線".
+        box.setMinimumHeight(dp(154));
         box.setBackground(bg(Color.rgb(248, 250, 252), 22));
 
         LinearLayout row = new LinearLayout(this);
@@ -580,26 +643,11 @@ public class MainActivity extends Activity {
         TextView name = new TextView(this);
         name.setText(d.name.length() > 0 ? d.name : "未命名設備");
         name.setTextColor(Color.rgb(42, 54, 68));
-        name.setTextSize(22);
+        name.setTextSize(17);
         name.setIncludeFontPadding(false);
         name.setTypeface(null, Typeface.BOLD);
         name.setSingleLine(true);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
-
-        CheckBox def = new CheckBox(this);
-        def.setChecked(d.isDefault);
-        def.setText("預設");
-        def.setTextSize(14);
-        def.setIncludeFontPadding(false);
-        def.setOnClickListener(v -> {
-            if (((CheckBox) v).isChecked()) {
-                DeviceStore.setDefault(this, d.id);
-            } else {
-                DeviceStore.clearDefault(this);
-            }
-            renderDevices();
-        });
-        row.addView(def);
 
         box.addView(row);
 
@@ -621,7 +669,7 @@ public class MainActivity extends Activity {
 
         TextView alarmStatus = new TextView(this);
         alarmStatus.setTextColor(Color.rgb(214, 65, 65));
-        alarmStatus.setTextSize(14);
+        alarmStatus.setTextSize(12);
         alarmStatus.setTypeface(null, Typeface.BOLD);
         alarmStatus.setIncludeFontPadding(false);
         alarmStatus.setSingleLine(true);
@@ -635,49 +683,115 @@ public class MainActivity extends Activity {
             return true;
         });
 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.setMargins(0, 0, 0, dp(12));
-        listLayout.addView(box, lp);
         if (d.id != null && d.id.length() > 0) {
             cardWidgets.put(d.id, new CardWidgets(d, box, voltage, power, energy, load, alarmStatus));
         }
 
         fetchSummary(d, box, voltage, power, energy, load, alarmStatus, null);
+        return box;
     }
 
     private TextView metric(String label, String value, int dotColor) {
         TextView t = new TextView(this);
         t.setTag(Integer.valueOf(dotColor));
-        setMetricText(t, label, value);
         t.setTextColor(Color.rgb(58, 70, 84));
-        t.setTextSize(15);
+        t.setTextSize(12);
         t.setTypeface(null, Typeface.BOLD);
         t.setIncludeFontPadding(false);
-        t.setSingleLine(true);
-        t.setPadding(dp(2), dp(2), dp(3), dp(2));
+        t.setSingleLine(false);
+        t.setMaxLines(2);
+        t.setMinHeight(dp(52));
+        t.setGravity(Gravity.CENTER);
+        t.setLineSpacing(0f, 0.91f);
+        t.setPadding(dp(1), dp(1), dp(2), dp(4));
         GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
         lp.width = 0;
         lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
         lp.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
         lp.setMargins(0, 0, dp(4), dp(5));
         t.setLayoutParams(lp);
+        setMetricText(t, label, value);
         return t;
     }
 
     private void setMetricText(TextView target, String label, String value) {
+        applyMetricText(target, label, value, true);
+    }
+
+    private void applyMetricText(TextView target, String label, String value, boolean scheduleAfterLayout) {
         if (value == null || value.length() == 0) {
             target.setText("");
         } else if ("可連線".equals(value)) {
             target.setText(value);
         } else {
-            String text = "• " + label + " " + value;
+            // Stage15_7: remove color dots so label/value stay visually centered; value text auto-fits each metric cell.
+            // Keep label/value stacked, keep value on one visual line, and use the largest safe font size.
+            String safeLabel = noBreakLabel(label);
+            String safeValue = noBreakValue(value);
+            String text = safeLabel + "\n" + safeValue;
             SpannableString s = new SpannableString(text);
-            int dotColor = Color.rgb(76, 195, 112);
-            Object tag = target.getTag();
-            if (tag instanceof Integer) dotColor = (Integer) tag;
-            s.setSpan(new ForegroundColorSpan(dotColor), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            int labelEnd = Math.max(0, text.indexOf('\n'));
+            int valueStart = Math.min(text.length(), labelEnd + 1);
+            if (labelEnd > 0) {
+                // Stage15_8: keep labels visually consistent. Use a fixed preferred size and only shrink
+                // when the label is too long for the metric cell, so "280 SOC" and "314 SOC" stay identical.
+                float labelSp = fitMetricLabelSp(target, label, 13.2f, 10.5f);
+                s.setSpan(new AbsoluteSizeSpan(Math.round(labelSp), true), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                s.setSpan(new StyleSpan(Typeface.BOLD), 0, labelEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (valueStart < text.length()) {
+                float valueSp = fitMetricTextSp(target, value, 17.2f, 9.5f);
+                s.setSpan(new AbsoluteSizeSpan(Math.round(valueSp), true), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                s.setSpan(new StyleSpan(Typeface.BOLD), valueStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
             target.setText(s);
+
+            if (scheduleAfterLayout && target.getWidth() <= 0) {
+                final String flabel = label;
+                final String fvalue = value;
+                target.post(() -> applyMetricText(target, flabel, fvalue, false));
+            }
         }
+    }
+
+    private String noBreakLabel(String label) {
+        if (label == null) return "";
+        return label.replace(" ", "\u00A0");
+    }
+
+    private String noBreakValue(String value) {
+        if (value == null || value.length() <= 1) return value == null ? "" : value;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < value.length(); i++) {
+            if (i > 0) sb.append('\u2060');
+            sb.append(value.charAt(i));
+        }
+        return sb.toString();
+    }
+
+    private float fitMetricTextSp(TextView target, String value, float maxSp, float minSp) {
+        int available = target.getWidth() - target.getPaddingLeft() - target.getPaddingRight();
+        if (available <= dp(12)) return maxSp;
+        Paint p = new Paint(target.getPaint());
+        for (float sp = maxSp; sp >= minSp; sp -= 0.5f) {
+            p.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics()));
+            if (p.measureText(value == null ? "" : value) <= available) return sp;
+        }
+        return minSp;
+    }
+
+    private float fitMetricLabelSp(TextView target, String label, float preferredSp, float minSp) {
+        int available = target.getWidth() - target.getPaddingLeft() - target.getPaddingRight();
+        if (available <= dp(12)) return preferredSp;
+        Paint p = new Paint(target.getPaint());
+        String text = label == null ? "" : label;
+        p.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, preferredSp, getResources().getDisplayMetrics()));
+        if (p.measureText(text) <= available) return preferredSp;
+        for (float sp = preferredSp - 0.5f; sp >= minSp; sp -= 0.5f) {
+            p.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics()));
+            if (p.measureText(text) <= available) return sp;
+        }
+        return minSp;
     }
 
     private boolean hasValue(String value) {
@@ -782,6 +896,52 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void saveDeviceRuntime(DeviceStore.Device d, String status, String openUrl) {
+        try {
+            if (d == null || d.id == null) return;
+            SharedPreferences.Editor e = getSharedPreferences("sgre_device_runtime", MODE_PRIVATE).edit()
+                    .putString(d.id + "_status", status == null ? "" : status)
+                    .putLong(d.id + "_time", System.currentTimeMillis());
+            if (openUrl != null && openUrl.trim().length() > 0) {
+                e.putString(d.id + "_open_url", openUrl.trim());
+            }
+            e.apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String getDeviceOpenUrl(DeviceStore.Device d) {
+        try {
+            if (d == null || d.id == null) return "";
+            SharedPreferences p = getSharedPreferences("sgre_device_runtime", MODE_PRIVATE);
+            String u = p.getString(d.id + "_open_url", "");
+            return u == null ? "" : u;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private String openPageUrl(String base, String rawPreferred) {
+        try {
+            String b = originOnly(base);
+            if (b == null || b.trim().length() == 0) return "";
+            String path = "/phone";
+            if (rawPreferred != null && rawPreferred.trim().length() > 0) {
+                URL u = new URL(DeviceStore.normalize(rawPreferred));
+                String p = u.getPath();
+                if (p != null && p.trim().length() > 0 && !"/".equals(p.trim())) {
+                    path = p.trim();
+                }
+            }
+            if (!path.startsWith("/")) path = "/" + path;
+            return b + path;
+        } catch (Exception e) {
+            String b = originOnly(base);
+            if (b == null || b.trim().length() == 0) return "";
+            return b + "/phone";
+        }
+    }
+
     private void fetchSummary(DeviceStore.Device d, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load, TextView alarmStatus, TextView urlLabel) {
         new Thread(() -> {
             boolean online = false;
@@ -795,47 +955,31 @@ public class MainActivity extends Activity {
             String labelL = "負載";
             String alarmLine = "";
             String activeUrlLabel = "目前連線：未連線";
+            String activeOpenUrl = "";
 
             if ("SGRE".equals(d.type)) {
                 String localBase = apiBase(d);
                 String remoteBase = originOnly(d.remoteUrl);
                 boolean usingRemote = false;
+                String liveOpenUrl = "";
 
-                String alarm = fetch(localBase + "/api/alarm", 900, 1200);
-                if (alarm.length() == 0 && remoteBase != null && remoteBase.trim().length() > 0) {
-                    alarm = fetch(remoteBase + "/api/alarm", 1200, 1600);
-                    if (alarm.length() > 0) usingRemote = true;
+                // Stage APP Live-First: 首頁卡片先抓 /api/live，讓功率/SOC/電壓/負載先更新；
+                // 告警改成第二階段背景補上，避免 /api/alarm 拖慢卡片數字。
+                String live = fetch(localBase + "/api/live", 900, 1300);
+                if (live.length() > 0) {
+                    liveOpenUrl = openPageUrl(localBase, d.localUrl);
                 }
-                if (alarm.length() > 0) {
-                    online = true;
-                    String battVolt = num(alarm, "batt_v");
-                    if (battVolt.length() > 0) v = oneDecimalText(battVolt) + "V";
-                    if (jsonBool(alarm, "alarm")) {
-                        String levelText = jsonString(alarm, "level_text");
-                        String mainText = firstNonEmpty(jsonString(alarm, "main"), jsonString(alarm, "msg"));
-                        if (levelText.length() == 0 || "正常".equals(levelText)) levelText = "警告";
-                        if (mainText.length() == 0 || "無告警".equals(mainText) || "正常".equals(mainText)) {
-                            mainText = firstNonEmpty(jsonString(alarm, "summary"), "未知告警");
-                        }
-                        if (mainText.startsWith(levelText + "｜")) {
-                            alarmLine = mainText;
-                        } else {
-                            alarmLine = levelText + "｜" + mainText;
-                        }
+                if (live.length() == 0 && remoteBase != null && remoteBase.trim().length() > 0) {
+                    live = fetch(remoteBase + "/api/live", 1000, 1600);
+                    if (live.length() > 0) {
+                        usingRemote = true;
+                        liveOpenUrl = openPageUrl(remoteBase, d.remoteUrl);
                     }
                 }
 
-                String live = fetch((usingRemote ? remoteBase : localBase) + "/api/live", 1000, 1600);
-                if (live.length() == 0 && !usingRemote && remoteBase != null && remoteBase.trim().length() > 0) {
-                    live = fetch(remoteBase + "/api/live", 1200, 1800);
-                    if (live.length() > 0) usingRemote = true;
-                }
-
-                if (online || live.length() > 0) {
-                    activeUrlLabel = usingRemote ? "目前外網：" + shortUrl(d.remoteUrl) : "目前內網：" + shortUrl(d.localUrl);
-                }
                 if (live.length() > 0) {
                     online = true;
+                    activeUrlLabel = usingRemote ? "目前外網：" + shortUrl(d.remoteUrl) : "目前內網：" + shortUrl(d.localUrl);
 
                     String pv = firstNonEmpty(
                             liveVal(live, "v_pv_total_power"),
@@ -905,7 +1049,98 @@ public class MainActivity extends Activity {
                     if (batterySoc.length() > 0) e = intText(batterySoc) + "%";
                     if (battVoltLive.length() > 0) v = oneDecimalText(battVoltLive) + "V";
                     if (totalLoad.length() > 0) l = intText(totalLoad) + "W";
+
+                    final String liveV = v;
+                    final String liveP = p;
+                    final String liveE = e;
+                    final String liveL = l;
+                    final String liveLabelP = labelP;
+                    final String liveLabelE = labelE;
+                    final String liveLabelV = labelV;
+                    final String liveLabelL = labelL;
+                    final String liveUrl = activeUrlLabel;
+                    final String liveOpen = liveOpenUrl;
+                    runOnUiThread(() -> {
+                        setMetricText(power, liveLabelP, liveP);
+                        setMetricText(energy, liveLabelE, liveE);
+                        setMetricText(voltage, liveLabelV, liveV);
+                        setMetricText(load, liveLabelL, liveL);
+                        saveDeviceRuntime(d, liveUrl, liveOpen);
+                        if (urlLabel != null) urlLabel.setText("");
+                        card.setAlpha(1f);
+                        card.setBackground(bg(Color.rgb(248, 250, 252), 22));
+                    });
                 }
+
+                // 第二階段才抓告警。若 /api/live 已成功，告警只走同一條連線路徑，避免多敲一次外網。
+                String alarm = "";
+                if (online) {
+                    alarm = fetch((usingRemote ? remoteBase : localBase) + "/api/alarm", 700, 1100);
+                } else {
+                    alarm = fetch(localBase + "/api/alarm", 800, 1100);
+                    if (alarm.length() == 0 && remoteBase != null && remoteBase.trim().length() > 0) {
+                        alarm = fetch(remoteBase + "/api/alarm", 1000, 1500);
+                        if (alarm.length() > 0) {
+                            usingRemote = true;
+                            liveOpenUrl = openPageUrl(remoteBase, d.remoteUrl);
+                        }
+                    } else if (alarm.length() > 0) {
+                        liveOpenUrl = openPageUrl(localBase, d.localUrl);
+                    }
+                }
+
+                if (alarm.length() > 0) {
+                    online = true;
+                    activeUrlLabel = usingRemote ? "目前外網：" + shortUrl(d.remoteUrl) : "目前內網：" + shortUrl(d.localUrl);
+                    String battVolt = num(alarm, "batt_v");
+                    if (!hasValue(v) && battVolt.length() > 0) v = oneDecimalText(battVolt) + "V";
+                    if (jsonBool(alarm, "alarm")) {
+                        String levelText = jsonString(alarm, "level_text");
+                        String mainText = firstNonEmpty(jsonString(alarm, "main"), jsonString(alarm, "msg"));
+                        if (levelText.length() == 0 || "正常".equals(levelText)) levelText = "警告";
+                        if (mainText.length() == 0 || "無告警".equals(mainText) || "正常".equals(mainText)) {
+                            mainText = firstNonEmpty(jsonString(alarm, "summary"), "未知告警");
+                        }
+                        if (mainText.startsWith(levelText + "｜")) {
+                            alarmLine = mainText;
+                        } else {
+                            alarmLine = levelText + "｜" + mainText;
+                        }
+                    }
+                    if (liveOpenUrl != null && liveOpenUrl.trim().length() > 0) {
+                        saveDeviceRuntime(d, activeUrlLabel, liveOpenUrl);
+                    }
+                }
+
+                // Stage14.3: connection status must mean the device page is reachable, not only that /api/live or /api/alarm returns JSON.
+                // Some external/WAN devices can open normally but expose the API through another path or block API probing.
+                // In that case keep the card active and show 「可連線」 instead of marking it gray.
+                if (!online) {
+                    String body = "";
+                    if (d.localUrl != null && d.localUrl.trim().length() > 0) {
+                        body = fetch(DeviceStore.normalize(d.localUrl), 1000, 1500);
+                        if (body.length() > 0) {
+                            activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
+                            liveOpenUrl = DeviceStore.normalize(d.localUrl);
+                        }
+                    }
+                    if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
+                        body = fetch(DeviceStore.normalize(d.remoteUrl), 1400, 2400);
+                        if (body.length() > 0) {
+                            activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
+                            liveOpenUrl = DeviceStore.normalize(d.remoteUrl);
+                        }
+                    }
+                    if (body.length() > 0) {
+                        online = true;
+                        v = "可連線";
+                        p = "";
+                        e = "";
+                        l = "";
+                        saveDeviceRuntime(d, activeUrlLabel, liveOpenUrl);
+                    }
+                }
+
             } else {
                 String live = "";
                 String liveSource = "";
@@ -914,6 +1149,7 @@ public class MainActivity extends Activity {
                     if (live.length() > 0) {
                         liveSource = u;
                         activeUrlLabel = "目前內網：" + shortUrl(u);
+                        activeOpenUrl = openUrlFromLiveSource(u, d.localUrl);
                         break;
                     }
                 }
@@ -923,6 +1159,7 @@ public class MainActivity extends Activity {
                         if (live.length() > 0) {
                             liveSource = u;
                             activeUrlLabel = "目前外網：" + shortUrl(u);
+                            activeOpenUrl = openUrlFromLiveSource(u, d.remoteUrl);
                             break;
                         }
                     }
@@ -962,11 +1199,17 @@ public class MainActivity extends Activity {
                     String body = "";
                     if (d.localUrl != null && d.localUrl.trim().length() > 0) {
                         body = fetch(DeviceStore.normalize(d.localUrl), 1000, 1400);
-                        if (body.length() > 0) activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
+                        if (body.length() > 0) {
+                            activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
+                            activeOpenUrl = DeviceStore.normalize(d.localUrl);
+                        }
                     }
                     if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
                         body = fetch(DeviceStore.normalize(d.remoteUrl), 1200, 1600);
-                        if (body.length() > 0) activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
+                        if (body.length() > 0) {
+                            activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
+                            activeOpenUrl = DeviceStore.normalize(d.remoteUrl);
+                        }
                     }
                     online = body.length() > 0;
                     if (online) {
@@ -998,6 +1241,7 @@ public class MainActivity extends Activity {
             final String flabelL = labelL;
             final String fa = alarmLine;
             final String furl = activeUrlLabel;
+            final String fopenUrl = activeOpenUrl;
 
             runOnUiThread(() -> {
                 setMetricText(power, flabelP, fp);
@@ -1013,7 +1257,11 @@ public class MainActivity extends Activity {
                         alarmStatus.setVisibility(View.GONE);
                     }
                 }
-                saveDeviceRuntime(d, ok ? furl : "目前連線：未連線");
+                if (ok && fopenUrl != null && fopenUrl.trim().length() > 0) {
+                    saveDeviceRuntime(d, furl, fopenUrl);
+                } else {
+                    saveDeviceRuntime(d, ok ? furl : "目前連線：未連線");
+                }
                 if (urlLabel != null) urlLabel.setText("");
                 if (!ok) {
                     card.setAlpha(0.55f);
@@ -1024,6 +1272,26 @@ public class MainActivity extends Activity {
                 }
             });
         }).start();
+    }
+
+    private String openUrlFromLiveSource(String liveSource, String preferredUrl) {
+        try {
+            // Stage16-H4-FIX2H Selpos open fix:
+            // Use the actual successful /api/live source as the page base.
+            // If Selpos was detected through http://IP:81/api/live, opening the saved preferred URL
+            // like http://IP would hit ESPHome built-in port 80 and can trigger JSON document overflow.
+            String source = DeviceStore.normalize(liveSource);
+            if (source.endsWith("/api/live")) {
+                return source.substring(0, source.length() - "/api/live".length());
+            }
+            String preferred = DeviceStore.normalize(preferredUrl);
+            if (preferred.length() > 0 && !preferred.endsWith("/api/live")) {
+                return preferred;
+            }
+            return originOnly(source);
+        } catch (Exception e) {
+            try { return originOnly(liveSource); } catch (Exception ignored) { return ""; }
+        }
     }
 
     private String firstUrl(DeviceStore.Device d) {
@@ -1106,16 +1374,74 @@ public class MainActivity extends Activity {
         }
     }
 
+    private boolean shouldPreferPort81Open(DeviceStore.Device d) {
+        if (d == null) return false;
+        String type = d.type == null ? "" : d.type.toUpperCase(java.util.Locale.US);
+        String name = d.name == null ? "" : d.name.toUpperCase(java.util.Locale.US);
+        return type.contains("BMS") || name.contains("SELPOS") || name.contains("SEPLOS") || name.contains("BMS");
+    }
+
+    private boolean isPrivateHostUrl(String url) {
+        try {
+            URL u = new URL(DeviceStore.normalize(url));
+            String h = u.getHost();
+            if (h == null) return false;
+            h = h.toLowerCase(java.util.Locale.US);
+            if (h.equals("localhost") || h.endsWith(".local")) return true;
+            if (h.startsWith("192.168.")) return true;
+            if (h.startsWith("10.")) return true;
+            if (h.startsWith("172.")) {
+                String[] p = h.split("\\.");
+                if (p.length > 1) {
+                    int n = Integer.parseInt(p[1]);
+                    return n >= 16 && n <= 31;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    private String normalizeOpenUrlForDevice(DeviceStore.Device d, String url) {
+        try {
+            String u = DeviceStore.normalize(url);
+            if (u.length() == 0) return "";
+            if (shouldPreferPort81Open(d) && isPrivateHostUrl(u) && !hasExplicitPort(originOnly(u))) {
+                String p81 = forcePort81(originOnly(u));
+                if (p81.length() > 0) return p81;
+            }
+            return u;
+        } catch (Exception e) {
+            return DeviceStore.normalize(url);
+        }
+    }
+
     private void openDevice(DeviceStore.Device d) {
         Intent i = new Intent(this, WebViewActivity.class);
         i.putExtra("id", d.id);
+
+        // Stage APP Click-Single-URL: 卡片點擊只開最近一次成功來源，避免 WebView 先內網後外網造成 HTML 串流被取消。
+        String openUrl = getDeviceOpenUrl(d);
+        if (openUrl == null || openUrl.trim().length() == 0) {
+            if (d.localUrl != null && d.localUrl.trim().length() > 0) {
+                openUrl = DeviceStore.normalize(d.localUrl);
+            } else {
+                openUrl = DeviceStore.normalize(d.remoteUrl);
+            }
+        }
+        if (openUrl != null && openUrl.trim().length() > 0) {
+            openUrl = normalizeOpenUrlForDevice(d, openUrl);
+            i.putExtra("url", openUrl.trim());
+        }
+
         startActivity(i);
     }
 
     private void showDeviceActionDialog(DeviceStore.Device d) {
         String local = (d.localUrl == null || d.localUrl.trim().length() == 0) ? "未設定" : d.localUrl;
         String remote = (d.remoteUrl == null || d.remoteUrl.trim().length() == 0) ? "未設定" : d.remoteUrl;
-        String info = getDeviceRuntime(d)
+        String info = (d.isDefault ? "目前狀態：預設設備\n\n" : "")
+                + getDeviceRuntime(d)
                 + "\n\n設定內網：" + local
                 + "\n設定外網：" + remote;
 
