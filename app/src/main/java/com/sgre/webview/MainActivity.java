@@ -1168,10 +1168,9 @@ public class MainActivity extends Activity {
                 if (live.length() > 0 && hasGenericCardItems(live)) {
                     online = true;
                     if (isSelposLive(live)) {
-                        int packCount = selposPackCount(live);
                         String soc280 = itemNumberByName(live, "280", "soc");
                         String soc314 = itemNumberByName(live, "314", "soc");
-                        boolean dualSelpos = packCount >= 2 || (soc280.length() > 0 && soc314.length() > 0);
+                        boolean dualSelpos = selposPackCount(live) >= 2 || (soc280.length() > 0 && soc314.length() > 0);
                         if (dualSelpos) {
                             labelP = "280 SOC";
                             labelE = "314 SOC";
@@ -1186,14 +1185,10 @@ public class MainActivity extends Activity {
                             labelE = "SOC";
                             labelV = "電壓";
                             labelL = "電流";
-                            String power = firstPackNumber(live, "power");
-                            String soc = firstPackNumber(live, "soc");
-                            String voltage = firstPackNumber(live, "voltage");
-                            String current = firstPackNumber(live, "current");
-                            if (power.length() == 0) power = firstNonEmpty(cardItemNumber(live, "功率"), cardItemNumber(live, "總功率"));
-                            if (soc.length() == 0) soc = firstNonEmpty(cardItemNumber(live, "SOC"), cardItemNumber(live, "平均SOC"));
-                            if (voltage.length() == 0) voltage = cardItemNumber(live, "電壓");
-                            if (current.length() == 0) current = cardItemNumber(live, "電流");
+                            String power = firstNonEmpty(firstPackNumber(live, "power"), cardItemNumber(live, "功率"), cardItemNumber(live, "總功率"));
+                            String soc = firstNonEmpty(firstPackNumber(live, "soc"), cardItemNumber(live, "SOC"), cardItemNumber(live, "平均SOC"));
+                            String voltage = firstNonEmpty(firstPackNumber(live, "voltage"), cardItemNumber(live, "電壓"));
+                            String current = firstNonEmpty(firstPackNumber(live, "current"), cardItemNumber(live, "電流"));
                             p = power.length() > 0 ? intText(power) + "W" : "--";
                             e = soc.length() > 0 ? oneDecimalText(soc) + "%" : "--";
                             v = voltage.length() > 0 ? twoDecimalText(voltage) + "V" : "--";
@@ -1654,26 +1649,19 @@ public class MainActivity extends Activity {
 
     private String itemNumberByName(String json, String namePart, String key) {
         try {
-            String mark = "\"name\"";
-            int searchFrom = 0;
-            while (true) {
-                int s = json.indexOf(mark, searchFrom);
-                if (s < 0) return "";
-                int colon = json.indexOf(":", s + mark.length());
-                if (colon < 0) return "";
-                int q1 = json.indexOf("\"", colon + 1);
-                if (q1 < 0) return "";
-                int q2 = json.indexOf("\"", q1 + 1);
-                if (q2 < 0) return "";
-                String found = json.substring(q1 + 1, q2);
-                if (found.contains(namePart)) {
-                    int objEnd = json.indexOf("}", q2);
-                    if (objEnd < 0) objEnd = Math.min(json.length(), q2 + 220);
-                    String item = json.substring(q2, Math.min(json.length(), objEnd + 1));
-                    return num(item, key);
+            org.json.JSONObject root = new org.json.JSONObject(json);
+            org.json.JSONArray items = root.optJSONArray("items");
+            if (items == null) return "";
+            for (int i = 0; i < items.length(); i++) {
+                org.json.JSONObject item = items.optJSONObject(i);
+                if (item == null) continue;
+                String n = item.optString("name", "");
+                if (n.indexOf(namePart) >= 0 && item.has(key)) {
+                    Object value = item.opt(key);
+                    return value == null ? "" : String.valueOf(value);
                 }
-                searchFrom = q2 + 1;
             }
+            return "";
         } catch (Exception e) {
             return "";
         }
@@ -1682,11 +1670,11 @@ public class MainActivity extends Activity {
     private int selposPackCount(String json) {
         try {
             org.json.JSONObject root = new org.json.JSONObject(json);
-            org.json.JSONArray arr = root.optJSONArray("items");
-            if (arr == null) return 0;
+            org.json.JSONArray items = root.optJSONArray("items");
+            if (items == null) return 0;
             int count = 0;
-            for (int i = 0; i < arr.length(); i++) {
-                org.json.JSONObject item = arr.optJSONObject(i);
+            for (int i = 0; i < items.length(); i++) {
+                org.json.JSONObject item = items.optJSONObject(i);
                 if (item == null) continue;
                 if (item.has("soc") || item.has("voltage") || item.has("current") || item.has("power")) count++;
             }
@@ -1699,18 +1687,19 @@ public class MainActivity extends Activity {
     private String firstPackNumber(String json, String key) {
         try {
             org.json.JSONObject root = new org.json.JSONObject(json);
-            org.json.JSONArray arr = root.optJSONArray("items");
-            if (arr == null || arr.length() == 0) return "";
-            for (int i = 0; i < arr.length(); i++) {
-                org.json.JSONObject item = arr.optJSONObject(i);
-                if (item != null && item.has(key)) return String.valueOf(item.optDouble(key));
+            org.json.JSONArray items = root.optJSONArray("items");
+            if (items == null) return "";
+            for (int i = 0; i < items.length(); i++) {
+                org.json.JSONObject item = items.optJSONObject(i);
+                if (item == null || !item.has(key)) continue;
+                Object value = item.opt(key);
+                return value == null ? "" : String.valueOf(value);
             }
             return "";
         } catch (Exception e) {
             return "";
         }
     }
-
 
     private String cardItemNumber(String json, String label) {
         try {
