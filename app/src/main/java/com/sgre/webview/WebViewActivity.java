@@ -467,91 +467,16 @@ public class WebViewActivity extends Activity {
         }
     }
 
-    private boolean shouldPreferPort81Open() {
-        if (device == null) return false;
-        String type = device.type == null ? "" : device.type.toUpperCase(java.util.Locale.US);
-        String name = device.name == null ? "" : device.name.toUpperCase(java.util.Locale.US);
-        return type.contains("BMS") || name.contains("SELPOS") || name.contains("SEPLOS") || name.contains("BMS");
-    }
-
-    private boolean hasExplicitPort(String url) {
-        try {
-            URL u = new URL(DeviceStore.normalize(url));
-            return u.getPort() > 0;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private boolean isPrivateHostUrl(String url) {
-        try {
-            URL u = new URL(DeviceStore.normalize(url));
-            String h = u.getHost();
-            if (h == null) return false;
-            h = h.toLowerCase(java.util.Locale.US);
-            if (h.equals("localhost") || h.endsWith(".local")) return true;
-            if (h.startsWith("192.168.")) return true;
-            if (h.startsWith("10.")) return true;
-            if (h.startsWith("172.")) {
-                String[] p = h.split("\\.");
-                if (p.length > 1) {
-                    int n = Integer.parseInt(p[1]);
-                    return n >= 16 && n <= 31;
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return false;
-    }
-
-    private String originOnly(String url) {
-        try {
-            String u = DeviceStore.normalize(url);
-            int scheme = u.indexOf("://");
-            int start = scheme >= 0 ? scheme + 3 : 0;
-            int slash = u.indexOf("/", start);
-            if (slash > 0) return u.substring(0, slash);
-            return u;
-        } catch (Exception e) {
-            return url == null ? "" : url;
-        }
-    }
-
-    private String forcePort81(String url) {
-        try {
-            if (url == null || url.trim().length() == 0) return "";
-            URL u = new URL(DeviceStore.normalize(url));
-            if (u.getPort() > 0) return DeviceStore.normalize(url);
-            return u.getProtocol() + "://" + u.getHost() + ":81";
-        } catch (Exception e) {
-            return DeviceStore.normalize(url);
-        }
-    }
-
-    private String normalizeOpenUrlForDevice(String url) {
-        try {
-            String u = DeviceStore.normalize(url);
-            if (u.length() == 0) return "";
-            if (shouldPreferPort81Open() && isPrivateHostUrl(u) && !hasExplicitPort(originOnly(u))) {
-                String p81 = forcePort81(originOnly(u));
-                if (p81.length() > 0) return p81;
-            }
-            return u;
-        } catch (Exception e) {
-            return DeviceStore.normalize(url);
-        }
-    }
-
     private void loadBestAvailable() {
         if (singleUrlMode && explicitOpenUrl != null && explicitOpenUrl.trim().length() > 0) {
-            final String target = normalizeOpenUrlForDevice(explicitOpenUrl.trim());
+            final String target = explicitOpenUrl.trim();
             if (loadingText != null) loadingText.setVisibility(View.GONE);
             applyViewInsetForUrl(target);
             webView.loadUrl(target);
             return;
         }
 
-        final String local = normalizeOpenUrlForDevice(DeviceStore.normalize(device.localUrl));
+        final String local = DeviceStore.normalize(device.localUrl);
         final String remote = DeviceStore.normalize(device.remoteUrl);
 
         if (local.length() == 0 && remote.length() == 0) {

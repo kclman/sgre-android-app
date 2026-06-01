@@ -1168,10 +1168,9 @@ public class MainActivity extends Activity {
                 if (live.length() > 0 && hasGenericCardItems(live)) {
                     online = true;
                     if (isSelposLive(live)) {
-                        int packCount = selposPackCount(live);
                         String soc280 = itemNumberByName(live, "280", "soc");
                         String soc314 = itemNumberByName(live, "314", "soc");
-                        boolean dualSelpos = packCount >= 2 || (soc280.length() > 0 && soc314.length() > 0);
+                        boolean dualSelpos = selposPackCount(live) >= 2 || (soc280.length() > 0 && soc314.length() > 0);
                         if (dualSelpos) {
                             labelP = "280 SOC";
                             labelE = "314 SOC";
@@ -1296,17 +1295,13 @@ public class MainActivity extends Activity {
 
     private String openUrlFromLiveSource(String liveSource, String preferredUrl) {
         try {
-            // Stage16-H4-FIX2H Selpos open fix:
-            // Use the actual successful /api/live source as the page base.
-            // If Selpos was detected through http://IP:81/api/live, opening the saved preferred URL
-            // like http://IP would hit ESPHome built-in port 80 and can trigger JSON document overflow.
-            String source = DeviceStore.normalize(liveSource);
-            if (source.endsWith("/api/live")) {
-                return source.substring(0, source.length() - "/api/live".length());
-            }
             String preferred = DeviceStore.normalize(preferredUrl);
             if (preferred.length() > 0 && !preferred.endsWith("/api/live")) {
                 return preferred;
+            }
+            String source = DeviceStore.normalize(liveSource);
+            if (source.endsWith("/api/live")) {
+                return source.substring(0, source.length() - "/api/live".length());
             }
             return originOnly(source);
         } catch (Exception e) {
@@ -1394,48 +1389,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    private boolean shouldPreferPort81Open(DeviceStore.Device d) {
-        if (d == null) return false;
-        String type = d.type == null ? "" : d.type.toUpperCase(java.util.Locale.US);
-        String name = d.name == null ? "" : d.name.toUpperCase(java.util.Locale.US);
-        return type.contains("BMS") || name.contains("SELPOS") || name.contains("SEPLOS") || name.contains("BMS");
-    }
-
-    private boolean isPrivateHostUrl(String url) {
-        try {
-            URL u = new URL(DeviceStore.normalize(url));
-            String h = u.getHost();
-            if (h == null) return false;
-            h = h.toLowerCase(java.util.Locale.US);
-            if (h.equals("localhost") || h.endsWith(".local")) return true;
-            if (h.startsWith("192.168.")) return true;
-            if (h.startsWith("10.")) return true;
-            if (h.startsWith("172.")) {
-                String[] p = h.split("\\.");
-                if (p.length > 1) {
-                    int n = Integer.parseInt(p[1]);
-                    return n >= 16 && n <= 31;
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return false;
-    }
-
-    private String normalizeOpenUrlForDevice(DeviceStore.Device d, String url) {
-        try {
-            String u = DeviceStore.normalize(url);
-            if (u.length() == 0) return "";
-            if (shouldPreferPort81Open(d) && isPrivateHostUrl(u) && !hasExplicitPort(originOnly(u))) {
-                String p81 = forcePort81(originOnly(u));
-                if (p81.length() > 0) return p81;
-            }
-            return u;
-        } catch (Exception e) {
-            return DeviceStore.normalize(url);
-        }
-    }
-
     private void openDevice(DeviceStore.Device d) {
         Intent i = new Intent(this, WebViewActivity.class);
         i.putExtra("id", d.id);
@@ -1450,7 +1403,6 @@ public class MainActivity extends Activity {
             }
         }
         if (openUrl != null && openUrl.trim().length() > 0) {
-            openUrl = normalizeOpenUrlForDevice(d, openUrl);
             i.putExtra("url", openUrl.trim());
         }
 
@@ -1678,14 +1630,15 @@ public class MainActivity extends Activity {
         }
     }
 
+
     private int selposPackCount(String json) {
         try {
             org.json.JSONObject root = new org.json.JSONObject(json);
-            org.json.JSONArray arr = root.optJSONArray("items");
-            if (arr == null) return 0;
+            org.json.JSONArray items = root.optJSONArray("items");
+            if (items == null) return 0;
             int count = 0;
-            for (int i = 0; i < arr.length(); i++) {
-                org.json.JSONObject item = arr.optJSONObject(i);
+            for (int i = 0; i < items.length(); i++) {
+                org.json.JSONObject item = items.optJSONObject(i);
                 if (item == null) continue;
                 if (item.has("soc") || item.has("voltage") || item.has("current") || item.has("power")) count++;
             }
@@ -1698,11 +1651,14 @@ public class MainActivity extends Activity {
     private String firstPackNumber(String json, String key) {
         try {
             org.json.JSONObject root = new org.json.JSONObject(json);
-            org.json.JSONArray arr = root.optJSONArray("items");
-            if (arr == null || arr.length() == 0) return "";
-            for (int i = 0; i < arr.length(); i++) {
-                org.json.JSONObject item = arr.optJSONObject(i);
-                if (item != null && item.has(key)) return String.valueOf(item.optDouble(key));
+            org.json.JSONArray items = root.optJSONArray("items");
+            if (items == null) return "";
+            for (int i = 0; i < items.length(); i++) {
+                org.json.JSONObject item = items.optJSONObject(i);
+                if (item == null || !item.has(key)) continue;
+                Object value = item.opt(key);
+                if (value == null) continue;
+                return String.valueOf(value);
             }
             return "";
         } catch (Exception e) {
