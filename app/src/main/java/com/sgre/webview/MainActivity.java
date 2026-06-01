@@ -1680,19 +1680,14 @@ public class MainActivity extends Activity {
 
     private int selposPackCount(String json) {
         try {
+            org.json.JSONObject root = new org.json.JSONObject(json);
+            org.json.JSONArray arr = root.optJSONArray("items");
+            if (arr == null) return 0;
             int count = 0;
-            String mark = "\"name\"";
-            int searchFrom = 0;
-            while (true) {
-                int s = json.indexOf(mark, searchFrom);
-                if (s < 0) break;
-                int objEnd = json.indexOf("}", s);
-                if (objEnd < 0) break;
-                String item = json.substring(s, Math.min(json.length(), objEnd + 1));
-                if (item.indexOf("\"soc\"") >= 0 || item.indexOf("\"voltage\"") >= 0 || item.indexOf("\"current\"") >= 0 || item.indexOf("\"power\"") >= 0) {
-                    count++;
-                }
-                searchFrom = objEnd + 1;
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject item = arr.optJSONObject(i);
+                if (item == null) continue;
+                if (item.has("soc") || item.has("voltage") || item.has("current") || item.has("power")) count++;
             }
             return count;
         } catch (Exception e) {
@@ -1702,16 +1697,12 @@ public class MainActivity extends Activity {
 
     private String firstPackNumber(String json, String key) {
         try {
-            String mark = "\"name\"";
-            int s = json.indexOf(mark);
-            while (s >= 0) {
-                int objEnd = json.indexOf("}", s);
-                if (objEnd < 0) return "";
-                String item = json.substring(s, Math.min(json.length(), objEnd + 1));
-                if (item.indexOf("\"" + key + "\"") >= 0) {
-                    return num(item, key);
-                }
-                s = json.indexOf(mark, objEnd + 1);
+            org.json.JSONObject root = new org.json.JSONObject(json);
+            org.json.JSONArray arr = root.optJSONArray("items");
+            if (arr == null || arr.length() == 0) return "";
+            for (int i = 0; i < arr.length(); i++) {
+                org.json.JSONObject item = arr.optJSONObject(i);
+                if (item != null && item.has(key)) return String.valueOf(item.optDouble(key));
             }
             return "";
         } catch (Exception e) {
