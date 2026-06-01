@@ -955,6 +955,7 @@ public class MainActivity extends Activity {
             String labelL = "負載";
             String alarmLine = "";
             String activeUrlLabel = "目前連線：未連線";
+            String activeOpenUrl = "";
 
             if ("SGRE".equals(d.type)) {
                 String localBase = apiBase(d);
@@ -1148,6 +1149,7 @@ public class MainActivity extends Activity {
                     if (live.length() > 0) {
                         liveSource = u;
                         activeUrlLabel = "目前內網：" + shortUrl(u);
+                        activeOpenUrl = openUrlFromLiveSource(u, d.localUrl);
                         break;
                     }
                 }
@@ -1157,6 +1159,7 @@ public class MainActivity extends Activity {
                         if (live.length() > 0) {
                             liveSource = u;
                             activeUrlLabel = "目前外網：" + shortUrl(u);
+                            activeOpenUrl = openUrlFromLiveSource(u, d.remoteUrl);
                             break;
                         }
                     }
@@ -1196,11 +1199,17 @@ public class MainActivity extends Activity {
                     String body = "";
                     if (d.localUrl != null && d.localUrl.trim().length() > 0) {
                         body = fetch(DeviceStore.normalize(d.localUrl), 1000, 1400);
-                        if (body.length() > 0) activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
+                        if (body.length() > 0) {
+                            activeUrlLabel = "目前內網：" + shortUrl(d.localUrl);
+                            activeOpenUrl = DeviceStore.normalize(d.localUrl);
+                        }
                     }
                     if (body.length() == 0 && d.remoteUrl != null && d.remoteUrl.trim().length() > 0) {
                         body = fetch(DeviceStore.normalize(d.remoteUrl), 1200, 1600);
-                        if (body.length() > 0) activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
+                        if (body.length() > 0) {
+                            activeUrlLabel = "目前外網：" + shortUrl(d.remoteUrl);
+                            activeOpenUrl = DeviceStore.normalize(d.remoteUrl);
+                        }
                     }
                     online = body.length() > 0;
                     if (online) {
@@ -1232,6 +1241,7 @@ public class MainActivity extends Activity {
             final String flabelL = labelL;
             final String fa = alarmLine;
             final String furl = activeUrlLabel;
+            final String fopenUrl = activeOpenUrl;
 
             runOnUiThread(() -> {
                 setMetricText(power, flabelP, fp);
@@ -1247,7 +1257,11 @@ public class MainActivity extends Activity {
                         alarmStatus.setVisibility(View.GONE);
                     }
                 }
-                saveDeviceRuntime(d, ok ? furl : "目前連線：未連線");
+                if (ok && fopenUrl != null && fopenUrl.trim().length() > 0) {
+                    saveDeviceRuntime(d, furl, fopenUrl);
+                } else {
+                    saveDeviceRuntime(d, ok ? furl : "目前連線：未連線");
+                }
                 if (urlLabel != null) urlLabel.setText("");
                 if (!ok) {
                     card.setAlpha(0.55f);
@@ -1258,6 +1272,22 @@ public class MainActivity extends Activity {
                 }
             });
         }).start();
+    }
+
+    private String openUrlFromLiveSource(String liveSource, String preferredUrl) {
+        try {
+            String preferred = DeviceStore.normalize(preferredUrl);
+            if (preferred.length() > 0 && !preferred.endsWith("/api/live")) {
+                return preferred;
+            }
+            String source = DeviceStore.normalize(liveSource);
+            if (source.endsWith("/api/live")) {
+                return source.substring(0, source.length() - "/api/live".length());
+            }
+            return originOnly(source);
+        } catch (Exception e) {
+            try { return originOnly(liveSource); } catch (Exception ignored) { return ""; }
+        }
     }
 
     private String firstUrl(DeviceStore.Device d) {
