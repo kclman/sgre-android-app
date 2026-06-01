@@ -1190,9 +1190,10 @@ public class MainActivity extends Activity {
                             String soc = firstPackNumber(live, "soc");
                             String voltage = firstPackNumber(live, "voltage");
                             String current = firstPackNumber(live, "current");
-                            if (power.length() == 0) power = cardItemNumber(live, "總功率");
-                            if (soc.length() == 0) soc = cardItemNumber(live, "平均SOC");
+                            if (power.length() == 0) power = firstNonEmpty(cardItemNumber(live, "功率"), cardItemNumber(live, "總功率"));
+                            if (soc.length() == 0) soc = firstNonEmpty(cardItemNumber(live, "SOC"), cardItemNumber(live, "平均SOC"));
                             if (voltage.length() == 0) voltage = cardItemNumber(live, "電壓");
+                            if (current.length() == 0) current = cardItemNumber(live, "電流");
                             p = power.length() > 0 ? intText(power) + "W" : "--";
                             e = soc.length() > 0 ? oneDecimalText(soc) + "%" : "--";
                             v = voltage.length() > 0 ? twoDecimalText(voltage) + "V" : "--";
