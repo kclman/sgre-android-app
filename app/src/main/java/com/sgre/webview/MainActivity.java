@@ -1168,16 +1168,36 @@ public class MainActivity extends Activity {
                 if (live.length() > 0 && hasGenericCardItems(live)) {
                     online = true;
                     if (isSelposLive(live)) {
-                        labelP = "280 SOC";
-                        labelE = "314 SOC";
-                        labelV = "總功率";
-                        labelL = "電壓";
+                        int packCount = selposPackCount(live);
                         String soc280 = itemNumberByName(live, "280", "soc");
                         String soc314 = itemNumberByName(live, "314", "soc");
-                        p = soc280.length() > 0 ? oneDecimalText(soc280) + "%" : "--";
-                        e = soc314.length() > 0 ? oneDecimalText(soc314) + "%" : "--";
-                        v = cardItemDisplay(live, "總功率");
-                        l = cardItemDisplay(live, "電壓");
+                        boolean dualSelpos = packCount >= 2 || (soc280.length() > 0 && soc314.length() > 0);
+                        if (dualSelpos) {
+                            labelP = "280 SOC";
+                            labelE = "314 SOC";
+                            labelV = "總功率";
+                            labelL = "電壓";
+                            p = soc280.length() > 0 ? oneDecimalText(soc280) + "%" : "--";
+                            e = soc314.length() > 0 ? oneDecimalText(soc314) + "%" : "--";
+                            v = cardItemDisplay(live, "總功率");
+                            l = cardItemDisplay(live, "電壓");
+                        } else {
+                            labelP = "功率";
+                            labelE = "SOC";
+                            labelV = "電壓";
+                            labelL = "電流";
+                            String power = firstPackNumber(live, "power");
+                            String soc = firstPackNumber(live, "soc");
+                            String voltage = firstPackNumber(live, "voltage");
+                            String current = firstPackNumber(live, "current");
+                            if (power.length() == 0) power = cardItemNumber(live, "總功率");
+                            if (soc.length() == 0) soc = cardItemNumber(live, "平均SOC");
+                            if (voltage.length() == 0) voltage = cardItemNumber(live, "電壓");
+                            p = power.length() > 0 ? intText(power) + "W" : "--";
+                            e = soc.length() > 0 ? oneDecimalText(soc) + "%" : "--";
+                            v = voltage.length() > 0 ? twoDecimalText(voltage) + "V" : "--";
+                            l = current.length() > 0 ? oneDecimalText(current) + "A" : "--";
+                        }
                     } else {
                         labelP = "在線";
                         labelE = "平均SOC";
@@ -1653,6 +1673,47 @@ public class MainActivity extends Activity {
                 }
                 searchFrom = q2 + 1;
             }
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private int selposPackCount(String json) {
+        try {
+            int count = 0;
+            String mark = "\"name\"";
+            int searchFrom = 0;
+            while (true) {
+                int s = json.indexOf(mark, searchFrom);
+                if (s < 0) break;
+                int objEnd = json.indexOf("}", s);
+                if (objEnd < 0) break;
+                String item = json.substring(s, Math.min(json.length(), objEnd + 1));
+                if (item.indexOf("\"soc\"") >= 0 || item.indexOf("\"voltage\"") >= 0 || item.indexOf("\"current\"") >= 0 || item.indexOf("\"power\"") >= 0) {
+                    count++;
+                }
+                searchFrom = objEnd + 1;
+            }
+            return count;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private String firstPackNumber(String json, String key) {
+        try {
+            String mark = "\"name\"";
+            int s = json.indexOf(mark);
+            while (s >= 0) {
+                int objEnd = json.indexOf("}", s);
+                if (objEnd < 0) return "";
+                String item = json.substring(s, Math.min(json.length(), objEnd + 1));
+                if (item.indexOf("\"" + key + "\"") >= 0) {
+                    return num(item, key);
+                }
+                s = json.indexOf(mark, objEnd + 1);
+            }
+            return "";
         } catch (Exception e) {
             return "";
         }
