@@ -50,6 +50,9 @@ public class WebViewActivity extends Activity {
     private ValueCallback<Uri[]> webFilePathCallback;
     private String explicitOpenUrl = "";
     private boolean singleUrlMode = false;
+    private int mainFrameLoadErrorCount = 0;
+    private String lastMainFrameUrl = "";
+
 
     @Override
     protected void onCreate(Bundle b) {
@@ -258,6 +261,8 @@ public class WebViewActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 applyViewInsetForUrl(url);
+                mainFrameLoadErrorCount = 0;
+                lastMainFrameUrl = DeviceStore.normalize(url);
                 if (loadingText != null) loadingText.setVisibility(View.GONE);
                 injectHistoryBridge();
                 injectAutoRuleFileBridge();
@@ -266,13 +271,14 @@ public class WebViewActivity extends Activity {
 
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                tryRemoteFallback("");
+                handleMainFrameLoadError(failingUrl);
             }
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (Build.VERSION.SDK_INT >= 21 && request != null && request.isForMainFrame()) {
-                    tryRemoteFallback("");
+                    String failing = request.getUrl() == null ? "" : request.getUrl().toString();
+                    handleMainFrameLoadError(failing);
                 }
             }
         });
@@ -545,7 +551,9 @@ public class WebViewActivity extends Activity {
     private void loadBestAvailable() {
         if (singleUrlMode && explicitOpenUrl != null && explicitOpenUrl.trim().length() > 0) {
             final String target = normalizeOpenUrlForDevice(explicitOpenUrl.trim());
-            if (loadingText != null) loadingText.setVisibility(View.GONE);
+            mainFrameLoadErrorCount = 0;
+            lastMainFrameUrl = target;
+            showLoadingMessage("正在連線...");
             applyViewInsetForUrl(target);
             webView.loadUrl(target);
             return;
@@ -586,6 +594,9 @@ public class WebViewActivity extends Activity {
                 if (usedRemote) {
                     triedRemote = true;
                 }
+                mainFrameLoadErrorCount = 0;
+                lastMainFrameUrl = finalTarget;
+                showLoadingMessage("正在連線...");
                 applyViewInsetForUrl(finalTarget);
                 webView.loadUrl(finalTarget);
             });
@@ -610,17 +621,82 @@ public class WebViewActivity extends Activity {
         }
     }
 
+    private void showLoadingMessage(String text) {
+        if (loadingText != null) {
+            loadingText.setText(text == null ? "" : text);
+            loadingText.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private boolean sameOrigin(String a, String b) {
+        try {
+            return originOnly(a).equals(originOnly(b));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String alternateOpenUrl(String failedUrl) {
+        String failed = originOnly(DeviceStore.normalize(failedUrl));
+        String local = normalizeOpenUrlForDevice(DeviceStore.normalize(device.localUrl));
+        String remote = DeviceStore.normalize(device.remoteUrl);
+        if (remote.length() > 0 && !sameOrigin(remote, failed)) return remote;
+        if (local.length() > 0 && !sameOrigin(local, failed)) return local;
+        return "";
+    }
+
+    private String addRetryToken(String url) {
+        try {
+            String u = DeviceStore.normalize(url);
+            if (u.length() == 0) return u;
+            String sep = u.indexOf('?') >= 0 ? "&" : "?";
+            return u + sep + "_r=" + System.currentTimeMillis();
+        } catch (Exception e) {
+            return url;
+        }
+    }
+
+    private void handleMainFrameLoadError(String failingUrl) {
+        final String failed = DeviceStore.normalize(failingUrl);
+        runOnUiThread(() -> {
+            mainFrameLoadErrorCount++;
+            if (mainFrameLoadErrorCount <= 2) {
+                String retryUrl = lastMainFrameUrl.length() > 0 ? lastMainFrameUrl : failed;
+                showLoadingMessage("連線中斷，正在重試 " + mainFrameLoadErrorCount + "/2...");
+                webView.postDelayed(() -> {
+                    String next = addRetryToken(retryUrl);
+                    applyViewInsetForUrl(next);
+                    webView.loadUrl(next);
+                }, 900);
+                return;
+            }
+
+            String alt = alternateOpenUrl(failed.length() > 0 ? failed : lastMainFrameUrl);
+            if (alt.length() > 0 && !sameOrigin(alt, lastMainFrameUrl)) {
+                showLoadingMessage("目前入口連線失敗，改試另一個網址...");
+                lastMainFrameUrl = alt;
+                mainFrameLoadErrorCount = 0;
+                triedRemote = true;
+                webView.postDelayed(() -> {
+                    applyViewInsetForUrl(alt);
+                    webView.loadUrl(alt);
+                }, 700);
+                return;
+            }
+
+            showLoadingMessage("無法連線，請稍後再試或返回首頁。\n" + (failed.length() > 0 ? failed : lastMainFrameUrl));
+        });
+    }
+
     private void tryRemoteFallback(String toast) {
-        if (singleUrlMode) return;
         if (triedRemote) return;
         String remote = DeviceStore.normalize(device.remoteUrl);
         if (remote.length() == 0) return;
         triedRemote = true;
         runOnUiThread(() -> {
-            if (loadingText != null) {
-                loadingText.setText("");
-                loadingText.setVisibility(View.GONE);
-            }
+            showLoadingMessage("內網連線失敗，改試外網...");
+            lastMainFrameUrl = remote;
+            mainFrameLoadErrorCount = 0;
             applyViewInsetForUrl(remote);
             webView.loadUrl(remote);
         });
