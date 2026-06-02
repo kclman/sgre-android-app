@@ -649,15 +649,9 @@ public class MainActivity extends Activity {
         name.setSingleLine(true);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
 
-        TextView menu = new TextView(this);
-        menu.setText("⋮");
-        menu.setTextColor(Color.rgb(95, 105, 118));
-        menu.setTextSize(22);
-        menu.setTypeface(null, Typeface.BOLD);
-        menu.setGravity(Gravity.CENTER);
-        menu.setPadding(dp(8), 0, dp(2), 0);
-        menu.setOnClickListener(v -> showDeviceActionDialog(d));
-        row.addView(menu, new LinearLayout.LayoutParams(dp(34), -1));
+        // Card menu entry: keep the card clean, no ugly visible dots.
+        // Tap the title text to open the info/edit menu; long-press the card body to drag-sort.
+        name.setOnClickListener(v -> showDeviceActionDialog(d));
 
         box.addView(row);
 
@@ -1504,7 +1498,6 @@ public class MainActivity extends Activity {
 
     private void showDeviceActionDialog(DeviceStore.Device d) {
         final String title = d.name == null || d.name.length() == 0 ? "設備" : d.name;
-        final AlertDialog[] holder = new AlertDialog[1];
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -1520,23 +1513,20 @@ public class MainActivity extends Activity {
         info.setText(getDeviceRuntime(d)
                 + "\n\n設定內網：" + (local.length() > 0 ? local : "未設定")
                 + "\n設定外網：" + (remote.length() > 0 ? remote : "未設定")
-                + "\n\n長按卡片可直接拖曳排序。點選下方可編輯或快速調整順序。");
+                + "\n\n長按卡片可直接拖曳排序。");
         root.addView(info, new LinearLayout.LayoutParams(-1, -2));
 
-        addActionButton(root, "上移一格", () -> { moveDevice(d, -1, false); if (holder[0] != null) holder[0].dismiss(); });
-        addActionButton(root, "下移一格", () -> { moveDevice(d, 1, false); if (holder[0] != null) holder[0].dismiss(); });
-        addActionButton(root, "移到最前", () -> { moveDevice(d, -1, true); if (holder[0] != null) holder[0].dismiss(); });
-        addActionButton(root, "移到最後", () -> { moveDevice(d, 1, true); if (holder[0] != null) holder[0].dismiss(); });
-        addActionButton(root, "設為預設", () -> { DeviceStore.setDefault(this, d.id); renderDevices(); if (holder[0] != null) holder[0].dismiss(); });
-        addActionButton(root, "編輯", () -> { if (holder[0] != null) holder[0].dismiss(); showDeviceDialog(d); });
-        addActionButton(root, "刪除", () -> { if (holder[0] != null) holder[0].dismiss(); confirmDeleteDevice(d); });
-
-        holder[0] = new AlertDialog.Builder(this)
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setView(root)
+                .setPositiveButton("設為預設", (dlg, which) -> {
+                    DeviceStore.setDefault(this, d.id);
+                    renderDevices();
+                })
+                .setNeutralButton("編輯", (dlg, which) -> showDeviceDialog(d))
                 .setNegativeButton("取消", null)
                 .create();
-        holder[0].show();
+        dialog.show();
     }
 
     private void addActionButton(LinearLayout root, String text, final Runnable action) {
