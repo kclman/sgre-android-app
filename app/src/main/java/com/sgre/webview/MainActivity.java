@@ -649,6 +649,16 @@ public class MainActivity extends Activity {
         name.setSingleLine(true);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
 
+        TextView menu = new TextView(this);
+        menu.setText("⋮");
+        menu.setTextColor(Color.rgb(95, 105, 118));
+        menu.setTextSize(22);
+        menu.setTypeface(null, Typeface.BOLD);
+        menu.setGravity(Gravity.CENTER);
+        menu.setPadding(dp(8), 0, dp(2), 0);
+        menu.setOnClickListener(v -> showDeviceActionDialog(d));
+        row.addView(menu, new LinearLayout.LayoutParams(dp(34), -1));
+
         box.addView(row);
 
         GridLayout grid = new GridLayout(this);
@@ -679,7 +689,46 @@ public class MainActivity extends Activity {
 
         box.setOnClickListener(v -> openDevice(d));
         box.setOnLongClickListener(v -> {
-            showDeviceActionDialog(d);
+            try {
+                ClipData data = ClipData.newPlainText("device_id", d.id == null ? "" : d.id);
+                View.DragShadowBuilder shadow = new View.DragShadowBuilder(box);
+                box.setAlpha(0.55f);
+                if (Build.VERSION.SDK_INT >= 24) {
+                    box.startDragAndDrop(data, shadow, d.id, 0);
+                } else {
+                    box.startDrag(data, shadow, d.id, 0);
+                }
+            } catch (Exception ignored) {
+                showDeviceActionDialog(d);
+            }
+            return true;
+        });
+        box.setOnDragListener((v, event) -> {
+            Object state = event.getLocalState();
+            if (!(state instanceof String)) return false;
+            String fromId = (String) state;
+            if (fromId.length() == 0) return false;
+            switch (event.getAction()) {
+                case android.view.DragEvent.ACTION_DRAG_STARTED:
+                    return true;
+                case android.view.DragEvent.ACTION_DRAG_ENTERED:
+                    if (!fromId.equals(d.id)) {
+                        box.animate().scaleX(1.035f).scaleY(1.035f).setDuration(80).start();
+                    }
+                    return true;
+                case android.view.DragEvent.ACTION_DRAG_EXITED:
+                    box.animate().scaleX(1f).scaleY(1f).setDuration(80).start();
+                    return true;
+                case android.view.DragEvent.ACTION_DROP:
+                    box.animate().scaleX(1f).scaleY(1f).setDuration(60).start();
+                    boolean afterTarget = event.getY() > (box.getHeight() / 2f);
+                    moveDeviceByDrag(fromId, d.id, afterTarget);
+                    return true;
+                case android.view.DragEvent.ACTION_DRAG_ENDED:
+                    box.setAlpha(1f);
+                    box.animate().scaleX(1f).scaleY(1f).setDuration(60).start();
+                    return true;
+            }
             return true;
         });
 
@@ -1455,46 +1504,54 @@ public class MainActivity extends Activity {
 
     private void showDeviceActionDialog(DeviceStore.Device d) {
         final String title = d.name == null || d.name.length() == 0 ? "設備" : d.name;
-        final String[] actions = new String[]{
-                "上移一格",
-                "下移一格",
-                "移到最前",
-                "移到最後",
-                "設為預設",
-                "編輯",
-                "刪除"
-        };
+        final AlertDialog[] holder = new AlertDialog[1];
 
-        new AlertDialog.Builder(this)
-                .setTitle("卡片操作：" + title)
-                .setItems(actions, (dialog, which) -> {
-                    switch (which) {
-                        case 0:
-                            moveDevice(d, -1, false);
-                            break;
-                        case 1:
-                            moveDevice(d, 1, false);
-                            break;
-                        case 2:
-                            moveDevice(d, -1, true);
-                            break;
-                        case 3:
-                            moveDevice(d, 1, true);
-                            break;
-                        case 4:
-                            DeviceStore.setDefault(this, d.id);
-                            renderDevices();
-                            break;
-                        case 5:
-                            showDeviceDialog(d);
-                            break;
-                        case 6:
-                            confirmDeleteDevice(d);
-                            break;
-                    }
-                })
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        root.setPadding(pad, dp(8), pad, dp(4));
+
+        TextView info = new TextView(this);
+        info.setTextColor(Color.rgb(42, 54, 68));
+        info.setTextSize(15);
+        info.setLineSpacing(dp(2), 1.0f);
+        String local = DeviceStore.normalize(d.localUrl);
+        String remote = DeviceStore.normalize(d.remoteUrl);
+        info.setText(getDeviceRuntime(d)
+                + "\n\n設定內網：" + (local.length() > 0 ? local : "未設定")
+                + "\n設定外網：" + (remote.length() > 0 ? remote : "未設定")
+                + "\n\n長按卡片可直接拖曳排序。點選下方可編輯或快速調整順序。");
+        root.addView(info, new LinearLayout.LayoutParams(-1, -2));
+
+        addActionButton(root, "上移一格", () -> { moveDevice(d, -1, false); if (holder[0] != null) holder[0].dismiss(); });
+        addActionButton(root, "下移一格", () -> { moveDevice(d, 1, false); if (holder[0] != null) holder[0].dismiss(); });
+        addActionButton(root, "移到最前", () -> { moveDevice(d, -1, true); if (holder[0] != null) holder[0].dismiss(); });
+        addActionButton(root, "移到最後", () -> { moveDevice(d, 1, true); if (holder[0] != null) holder[0].dismiss(); });
+        addActionButton(root, "設為預設", () -> { DeviceStore.setDefault(this, d.id); renderDevices(); if (holder[0] != null) holder[0].dismiss(); });
+        addActionButton(root, "編輯", () -> { if (holder[0] != null) holder[0].dismiss(); showDeviceDialog(d); });
+        addActionButton(root, "刪除", () -> { if (holder[0] != null) holder[0].dismiss(); confirmDeleteDevice(d); });
+
+        holder[0] = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setView(root)
                 .setNegativeButton("取消", null)
-                .show();
+                .create();
+        holder[0].show();
+    }
+
+    private void addActionButton(LinearLayout root, String text, final Runnable action) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setAllCaps(false);
+        b.setTextSize(15);
+        b.setTextColor(Color.rgb(35, 48, 64));
+        b.setGravity(Gravity.CENTER_VERTICAL);
+        b.setOnClickListener(v -> {
+            try { action.run(); } catch (Exception ignored) {}
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(44));
+        lp.setMargins(0, dp(8), 0, 0);
+        root.addView(b, lp);
     }
 
     private void confirmDeleteDevice(DeviceStore.Device d) {
@@ -1535,6 +1592,32 @@ public class MainActivity extends Activity {
             DeviceStore.save(this, list);
             renderDevices();
         } catch (Exception ignored) {
+        }
+    }
+
+    private void moveDeviceByDrag(String fromId, String toId, boolean afterTarget) {
+        try {
+            if (fromId == null || toId == null || fromId.equals(toId)) return;
+            List<DeviceStore.Device> list = DeviceStore.load(this);
+            int from = -1;
+            int to = -1;
+            for (int i = 0; i < list.size(); i++) {
+                DeviceStore.Device item = list.get(i);
+                if (item == null || item.id == null) continue;
+                if (item.id.equals(fromId)) from = i;
+                if (item.id.equals(toId)) to = i;
+            }
+            if (from < 0 || to < 0 || from == to) return;
+            DeviceStore.Device moved = list.remove(from);
+            if (from < to) to--;
+            int insertAt = afterTarget ? to + 1 : to;
+            if (insertAt < 0) insertAt = 0;
+            if (insertAt > list.size()) insertAt = list.size();
+            list.add(insertAt, moved);
+            DeviceStore.save(this, list);
+            renderDevices();
+        } catch (Exception ignored) {
+            renderDevices();
         }
     }
 
