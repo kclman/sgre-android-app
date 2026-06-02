@@ -38,6 +38,7 @@ public class WebViewActivity extends Activity {
     private TextView loadingText;
     private DeviceStore.Device device;
     private boolean triedRemote = false;
+    private boolean mainFrameLoadError = false;
     private HistoryBridge historyBridge;
     private int lastTopInset = 0;
     private int lastBottomInset = 0;
@@ -256,23 +257,36 @@ public class WebViewActivity extends Activity {
             }
 
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                mainFrameLoadError = false;
+                if (loadingText != null) loadingText.setVisibility(View.GONE);
+                super.onPageStarted(view, url, favicon);
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 applyViewInsetForUrl(url);
-                if (loadingText != null) loadingText.setVisibility(View.GONE);
-                injectHistoryBridge();
-                injectAutoRuleFileBridge();
+                if (!mainFrameLoadError && loadingText != null) loadingText.setVisibility(View.GONE);
+                if (!mainFrameLoadError) {
+                    injectHistoryBridge();
+                    injectAutoRuleFileBridge();
+                }
                 super.onPageFinished(view, url);
             }
 
             @Override
             public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-                tryRemoteFallback("");
+                showMainFrameLoadError(description, failingUrl);
             }
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (Build.VERSION.SDK_INT >= 21 && request != null && request.isForMainFrame()) {
-                    tryRemoteFallback("");
+                    String desc = "";
+                    try { desc = error == null ? "" : String.valueOf(error.getDescription()); } catch (Exception ignored) {}
+                    String url = "";
+                    try { url = request.getUrl() == null ? "" : request.getUrl().toString(); } catch (Exception ignored) {}
+                    showMainFrameLoadError(desc, url);
                 }
             }
         });
@@ -467,16 +481,91 @@ public class WebViewActivity extends Activity {
         }
     }
 
+    private boolean shouldPreferPort81Open() {
+        if (device == null) return false;
+        String type = device.type == null ? "" : device.type.toUpperCase(java.util.Locale.US);
+        String name = device.name == null ? "" : device.name.toUpperCase(java.util.Locale.US);
+        return type.contains("BMS") || name.contains("SELPOS") || name.contains("SEPLOS") || name.contains("BMS");
+    }
+
+    private boolean hasExplicitPort(String url) {
+        try {
+            URL u = new URL(DeviceStore.normalize(url));
+            return u.getPort() > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean isPrivateHostUrl(String url) {
+        try {
+            URL u = new URL(DeviceStore.normalize(url));
+            String h = u.getHost();
+            if (h == null) return false;
+            h = h.toLowerCase(java.util.Locale.US);
+            if (h.equals("localhost") || h.endsWith(".local")) return true;
+            if (h.startsWith("192.168.")) return true;
+            if (h.startsWith("10.")) return true;
+            if (h.startsWith("172.")) {
+                String[] p = h.split("\\.");
+                if (p.length > 1) {
+                    int n = Integer.parseInt(p[1]);
+                    return n >= 16 && n <= 31;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    private String originOnly(String url) {
+        try {
+            String u = DeviceStore.normalize(url);
+            int scheme = u.indexOf("://");
+            int start = scheme >= 0 ? scheme + 3 : 0;
+            int slash = u.indexOf("/", start);
+            if (slash > 0) return u.substring(0, slash);
+            return u;
+        } catch (Exception e) {
+            return url == null ? "" : url;
+        }
+    }
+
+    private String forcePort81(String url) {
+        try {
+            if (url == null || url.trim().length() == 0) return "";
+            URL u = new URL(DeviceStore.normalize(url));
+            if (u.getPort() > 0) return DeviceStore.normalize(url);
+            return u.getProtocol() + "://" + u.getHost() + ":81";
+        } catch (Exception e) {
+            return DeviceStore.normalize(url);
+        }
+    }
+
+    private String normalizeOpenUrlForDevice(String url) {
+        try {
+            String u = DeviceStore.normalize(url);
+            if (u.length() == 0) return "";
+            if (shouldPreferPort81Open() && isPrivateHostUrl(u) && !hasExplicitPort(originOnly(u))) {
+                String p81 = forcePort81(originOnly(u));
+                if (p81.length() > 0) return p81;
+            }
+            return u;
+        } catch (Exception e) {
+            return DeviceStore.normalize(url);
+        }
+    }
+
     private void loadBestAvailable() {
         if (singleUrlMode && explicitOpenUrl != null && explicitOpenUrl.trim().length() > 0) {
-            final String target = explicitOpenUrl.trim();
+            final String target = normalizeOpenUrlForDevice(explicitOpenUrl.trim());
             if (loadingText != null) loadingText.setVisibility(View.GONE);
             applyViewInsetForUrl(target);
             webView.loadUrl(target);
             return;
         }
 
-        final String local = DeviceStore.normalize(device.localUrl);
+        final String local = normalizeOpenUrlForDevice(DeviceStore.normalize(device.localUrl));
         final String remote = DeviceStore.normalize(device.remoteUrl);
 
         if (local.length() == 0 && remote.length() == 0) {
@@ -549,6 +638,18 @@ public class WebViewActivity extends Activity {
             applyViewInsetForUrl(remote);
             webView.loadUrl(remote);
         });
+    }
+
+
+    private void showMainFrameLoadError(String description, String failingUrl) {
+        mainFrameLoadError = true;
+        try { if (webView != null) webView.stopLoading(); } catch (Exception ignored) {}
+        String url = failingUrl == null || failingUrl.length() == 0 ? "目前網址" : failingUrl;
+        String desc = description == null || description.length() == 0 ? "連線失敗" : description;
+        if (loadingText != null) {
+            loadingText.setText("網頁暫時無法連線\n\n" + url + "\n\n" + desc + "\n\n請按返回鍵回首頁，或稍後再點卡片重試。首頁卡片資料會先保留上次成功快取。") ;
+            loadingText.setVisibility(View.VISIBLE);
+        }
     }
 
     private String readTextFromUri(Uri uri) throws Exception {
@@ -647,6 +748,10 @@ public class WebViewActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (mainFrameLoadError || singleUrlMode) {
+            finish();
+            return;
+        }
         if (webView != null && webView.canGoBack()) webView.goBack();
         else super.onBackPressed();
     }

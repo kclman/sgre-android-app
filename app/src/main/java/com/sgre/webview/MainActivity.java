@@ -649,6 +649,10 @@ public class MainActivity extends Activity {
         name.setSingleLine(true);
         row.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
 
+        // Card menu entry: keep the card clean, no ugly visible dots.
+        // Tap the title text to open the info/edit menu; long-press the card body to drag-sort.
+        name.setOnClickListener(v -> showDeviceActionDialog(d));
+
         box.addView(row);
 
         GridLayout grid = new GridLayout(this);
@@ -679,7 +683,46 @@ public class MainActivity extends Activity {
 
         box.setOnClickListener(v -> openDevice(d));
         box.setOnLongClickListener(v -> {
-            showDeviceActionDialog(d);
+            try {
+                ClipData data = ClipData.newPlainText("device_id", d.id == null ? "" : d.id);
+                View.DragShadowBuilder shadow = new View.DragShadowBuilder(box);
+                box.setAlpha(0.55f);
+                if (Build.VERSION.SDK_INT >= 24) {
+                    box.startDragAndDrop(data, shadow, d.id, 0);
+                } else {
+                    box.startDrag(data, shadow, d.id, 0);
+                }
+            } catch (Exception ignored) {
+                showDeviceActionDialog(d);
+            }
+            return true;
+        });
+        box.setOnDragListener((v, event) -> {
+            Object state = event.getLocalState();
+            if (!(state instanceof String)) return false;
+            String fromId = (String) state;
+            if (fromId.length() == 0) return false;
+            switch (event.getAction()) {
+                case android.view.DragEvent.ACTION_DRAG_STARTED:
+                    return true;
+                case android.view.DragEvent.ACTION_DRAG_ENTERED:
+                    if (!fromId.equals(d.id)) {
+                        box.animate().scaleX(1.035f).scaleY(1.035f).setDuration(80).start();
+                    }
+                    return true;
+                case android.view.DragEvent.ACTION_DRAG_EXITED:
+                    box.animate().scaleX(1f).scaleY(1f).setDuration(80).start();
+                    return true;
+                case android.view.DragEvent.ACTION_DROP:
+                    box.animate().scaleX(1f).scaleY(1f).setDuration(60).start();
+                    boolean afterTarget = event.getY() > (box.getHeight() / 2f);
+                    moveDeviceByDrag(fromId, d.id, afterTarget);
+                    return true;
+                case android.view.DragEvent.ACTION_DRAG_ENDED:
+                    box.setAlpha(1f);
+                    box.animate().scaleX(1f).scaleY(1f).setDuration(60).start();
+                    return true;
+            }
             return true;
         });
 
@@ -687,6 +730,7 @@ public class MainActivity extends Activity {
             cardWidgets.put(d.id, new CardWidgets(d, box, voltage, power, energy, load, alarmStatus));
         }
 
+        applyCardCache(d, box, voltage, power, energy, load, alarmStatus);
         fetchSummary(d, box, voltage, power, energy, load, alarmStatus, null);
         return box;
     }
@@ -918,6 +962,71 @@ public class MainActivity extends Activity {
             return u == null ? "" : u;
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    private String cardCacheKey(DeviceStore.Device d, String suffix) {
+        if (d == null || d.id == null) return "";
+        return d.id + "_card_" + suffix;
+    }
+
+    private boolean hasCardCache(DeviceStore.Device d) {
+        try {
+            if (d == null || d.id == null) return false;
+            SharedPreferences p = getSharedPreferences("sgre_device_runtime", MODE_PRIVATE);
+            return p.getLong(cardCacheKey(d, "time"), 0L) > 0L;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void saveCardCache(DeviceStore.Device d, String labelP, String valueP, String labelE, String valueE, String labelV, String valueV, String labelL, String valueL, String alarmLine) {
+        try {
+            if (d == null || d.id == null) return;
+            if (!hasValue(valueP) && !hasValue(valueE) && !hasValue(valueV) && !hasValue(valueL)) return;
+            getSharedPreferences("sgre_device_runtime", MODE_PRIVATE).edit()
+                    .putString(cardCacheKey(d, "label_p"), labelP == null ? "功率" : labelP)
+                    .putString(cardCacheKey(d, "value_p"), valueP == null ? "" : valueP)
+                    .putString(cardCacheKey(d, "label_e"), labelE == null ? "SOC" : labelE)
+                    .putString(cardCacheKey(d, "value_e"), valueE == null ? "" : valueE)
+                    .putString(cardCacheKey(d, "label_v"), labelV == null ? "電壓" : labelV)
+                    .putString(cardCacheKey(d, "value_v"), valueV == null ? "" : valueV)
+                    .putString(cardCacheKey(d, "label_l"), labelL == null ? "負載" : labelL)
+                    .putString(cardCacheKey(d, "value_l"), valueL == null ? "" : valueL)
+                    .putString(cardCacheKey(d, "alarm"), alarmLine == null ? "" : alarmLine)
+                    .putLong(cardCacheKey(d, "time"), System.currentTimeMillis())
+                    .apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private boolean applyCardCache(DeviceStore.Device d, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load, TextView alarmStatus) {
+        try {
+            if (d == null || d.id == null) return false;
+            SharedPreferences p = getSharedPreferences("sgre_device_runtime", MODE_PRIVATE);
+            long t = p.getLong(cardCacheKey(d, "time"), 0L);
+            if (t <= 0L) return false;
+            setMetricText(power, p.getString(cardCacheKey(d, "label_p"), "功率"), p.getString(cardCacheKey(d, "value_p"), "--"));
+            setMetricText(energy, p.getString(cardCacheKey(d, "label_e"), "SOC"), p.getString(cardCacheKey(d, "value_e"), "--"));
+            setMetricText(voltage, p.getString(cardCacheKey(d, "label_v"), "電壓"), p.getString(cardCacheKey(d, "value_v"), "--"));
+            setMetricText(load, p.getString(cardCacheKey(d, "label_l"), "負載"), p.getString(cardCacheKey(d, "value_l"), "--"));
+            String alarmLine = p.getString(cardCacheKey(d, "alarm"), "");
+            if (alarmStatus != null) {
+                if (alarmLine != null && alarmLine.length() > 0) {
+                    alarmStatus.setText(alarmLine);
+                    alarmStatus.setVisibility(View.VISIBLE);
+                } else {
+                    alarmStatus.setText("");
+                    alarmStatus.setVisibility(View.GONE);
+                }
+            }
+            if (card != null) {
+                card.setAlpha(1f);
+                card.setBackground(bg(Color.rgb(248, 250, 252), 22));
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -1168,16 +1277,32 @@ public class MainActivity extends Activity {
                 if (live.length() > 0 && hasGenericCardItems(live)) {
                     online = true;
                     if (isSelposLive(live)) {
-                        labelP = "280 SOC";
-                        labelE = "314 SOC";
-                        labelV = "總功率";
-                        labelL = "電壓";
                         String soc280 = itemNumberByName(live, "280", "soc");
                         String soc314 = itemNumberByName(live, "314", "soc");
-                        p = soc280.length() > 0 ? oneDecimalText(soc280) + "%" : "--";
-                        e = soc314.length() > 0 ? oneDecimalText(soc314) + "%" : "--";
-                        v = cardItemDisplay(live, "總功率");
-                        l = cardItemDisplay(live, "電壓");
+                        boolean dualSelpos = selposPackCount(live) >= 2 || (soc280.length() > 0 && soc314.length() > 0);
+                        if (dualSelpos) {
+                            labelP = "280 SOC";
+                            labelE = "314 SOC";
+                            labelV = "總功率";
+                            labelL = "電壓";
+                            p = soc280.length() > 0 ? oneDecimalText(soc280) + "%" : "--";
+                            e = soc314.length() > 0 ? oneDecimalText(soc314) + "%" : "--";
+                            v = cardItemDisplay(live, "總功率");
+                            l = cardItemDisplay(live, "電壓");
+                        } else {
+                            labelP = "功率";
+                            labelE = "SOC";
+                            labelV = "電壓";
+                            labelL = "電流";
+                            String bmsPowerText = firstNonEmpty(firstPackNumber(live, "power"), cardItemNumber(live, "功率"), cardItemNumber(live, "總功率"));
+                            String bmsSocText = firstNonEmpty(firstPackNumber(live, "soc"), cardItemNumber(live, "SOC"), cardItemNumber(live, "平均SOC"));
+                            String bmsVoltageText = firstNonEmpty(firstPackNumber(live, "voltage"), cardItemNumber(live, "電壓"));
+                            String bmsCurrentText = firstNonEmpty(firstPackNumber(live, "current"), cardItemNumber(live, "電流"));
+                            p = bmsPowerText.length() > 0 ? intText(bmsPowerText) + "W" : "--";
+                            e = bmsSocText.length() > 0 ? oneDecimalText(bmsSocText) + "%" : "--";
+                            v = bmsVoltageText.length() > 0 ? twoDecimalText(bmsVoltageText) + "V" : "--";
+                            l = bmsCurrentText.length() > 0 ? oneDecimalText(bmsCurrentText) + "A" : "--";
+                        }
                     } else {
                         labelP = "在線";
                         labelE = "平均SOC";
@@ -1244,6 +1369,13 @@ public class MainActivity extends Activity {
             final String fopenUrl = activeOpenUrl;
 
             runOnUiThread(() -> {
+                if (!ok && hasCardCache(d)) {
+                    // Keep the last good values on screen while the next refresh is still failing/slow.
+                    // This avoids the home page flashing into all "--" after returning from a WebView.
+                    if (urlLabel != null) urlLabel.setText("");
+                    saveDeviceRuntime(d, "目前連線：更新中 / 保留上次資料");
+                    return;
+                }
                 setMetricText(power, flabelP, fp);
                 setMetricText(energy, flabelE, fe);
                 setMetricText(voltage, flabelV, fv);
@@ -1256,6 +1388,9 @@ public class MainActivity extends Activity {
                         alarmStatus.setText("");
                         alarmStatus.setVisibility(View.GONE);
                     }
+                }
+                if (ok) {
+                    saveCardCache(d, flabelP, fp, flabelE, fe, flabelV, fv, flabelL, fl, fa);
                 }
                 if (ok && fopenUrl != null && fopenUrl.trim().length() > 0) {
                     saveDeviceRuntime(d, furl, fopenUrl);
@@ -1276,13 +1411,17 @@ public class MainActivity extends Activity {
 
     private String openUrlFromLiveSource(String liveSource, String preferredUrl) {
         try {
-            String preferred = DeviceStore.normalize(preferredUrl);
-            if (preferred.length() > 0 && !preferred.endsWith("/api/live")) {
-                return preferred;
-            }
+            // Stage16-H4-FIX2H Selpos open fix:
+            // Use the actual successful /api/live source as the page base.
+            // If Selpos was detected through http://IP:81/api/live, opening the saved preferred URL
+            // like http://IP would hit ESPHome built-in port 80 and can trigger JSON document overflow.
             String source = DeviceStore.normalize(liveSource);
             if (source.endsWith("/api/live")) {
                 return source.substring(0, source.length() - "/api/live".length());
+            }
+            String preferred = DeviceStore.normalize(preferredUrl);
+            if (preferred.length() > 0 && !preferred.endsWith("/api/live")) {
+                return preferred;
             }
             return originOnly(source);
         } catch (Exception e) {
@@ -1370,6 +1509,48 @@ public class MainActivity extends Activity {
         }
     }
 
+    private boolean shouldPreferPort81Open(DeviceStore.Device d) {
+        if (d == null) return false;
+        String type = d.type == null ? "" : d.type.toUpperCase(java.util.Locale.US);
+        String name = d.name == null ? "" : d.name.toUpperCase(java.util.Locale.US);
+        return type.contains("BMS") || name.contains("SELPOS") || name.contains("SEPLOS") || name.contains("BMS");
+    }
+
+    private boolean isPrivateHostUrl(String url) {
+        try {
+            URL u = new URL(DeviceStore.normalize(url));
+            String h = u.getHost();
+            if (h == null) return false;
+            h = h.toLowerCase(java.util.Locale.US);
+            if (h.equals("localhost") || h.endsWith(".local")) return true;
+            if (h.startsWith("192.168.")) return true;
+            if (h.startsWith("10.")) return true;
+            if (h.startsWith("172.")) {
+                String[] p = h.split("\\.");
+                if (p.length > 1) {
+                    int n = Integer.parseInt(p[1]);
+                    return n >= 16 && n <= 31;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    private String normalizeOpenUrlForDevice(DeviceStore.Device d, String url) {
+        try {
+            String u = DeviceStore.normalize(url);
+            if (u.length() == 0) return "";
+            if (shouldPreferPort81Open(d) && isPrivateHostUrl(u) && !hasExplicitPort(originOnly(u))) {
+                String p81 = forcePort81(originOnly(u));
+                if (p81.length() > 0) return p81;
+            }
+            return u;
+        } catch (Exception e) {
+            return DeviceStore.normalize(url);
+        }
+    }
+
     private void openDevice(DeviceStore.Device d) {
         Intent i = new Intent(this, WebViewActivity.class);
         i.putExtra("id", d.id);
@@ -1384,6 +1565,7 @@ public class MainActivity extends Activity {
             }
         }
         if (openUrl != null && openUrl.trim().length() > 0) {
+            openUrl = normalizeOpenUrlForDevice(d, openUrl);
             i.putExtra("url", openUrl.trim());
         }
 
@@ -1391,26 +1573,118 @@ public class MainActivity extends Activity {
     }
 
     private void showDeviceActionDialog(DeviceStore.Device d) {
-        String local = (d.localUrl == null || d.localUrl.trim().length() == 0) ? "未設定" : d.localUrl;
-        String remote = (d.remoteUrl == null || d.remoteUrl.trim().length() == 0) ? "未設定" : d.remoteUrl;
-        String info = (d.isDefault ? "目前狀態：預設設備\n\n" : "")
-                + getDeviceRuntime(d)
-                + "\n\n設定內網：" + local
-                + "\n設定外網：" + remote;
+        final String title = d.name == null || d.name.length() == 0 ? "設備" : d.name;
 
-        new AlertDialog.Builder(this)
-                .setTitle(d.name)
-                .setMessage(info)
-                .setPositiveButton("編輯", (dialog, which) -> showDeviceDialog(d))
-                .setNeutralButton("設為預設", (dialog, which) -> {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        root.setPadding(pad, dp(8), pad, dp(4));
+
+        TextView info = new TextView(this);
+        info.setTextColor(Color.rgb(42, 54, 68));
+        info.setTextSize(15);
+        info.setLineSpacing(dp(2), 1.0f);
+        String local = DeviceStore.normalize(d.localUrl);
+        String remote = DeviceStore.normalize(d.remoteUrl);
+        info.setText(getDeviceRuntime(d)
+                + "\n\n設定內網：" + (local.length() > 0 ? local : "未設定")
+                + "\n設定外網：" + (remote.length() > 0 ? remote : "未設定")
+                + "\n\n長按卡片可直接拖曳排序。");
+        root.addView(info, new LinearLayout.LayoutParams(-1, -2));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setView(root)
+                .setPositiveButton("設為預設", (dlg, which) -> {
                     DeviceStore.setDefault(this, d.id);
                     renderDevices();
                 })
-                .setNegativeButton("刪除", (dialog, which) -> {
+                .setNeutralButton("編輯", (dlg, which) -> showDeviceDialog(d))
+                .setNegativeButton("取消", null)
+                .create();
+        dialog.show();
+    }
+
+    private void addActionButton(LinearLayout root, String text, final Runnable action) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setAllCaps(false);
+        b.setTextSize(15);
+        b.setTextColor(Color.rgb(35, 48, 64));
+        b.setGravity(Gravity.CENTER_VERTICAL);
+        b.setOnClickListener(v -> {
+            try { action.run(); } catch (Exception ignored) {}
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(44));
+        lp.setMargins(0, dp(8), 0, 0);
+        root.addView(b, lp);
+    }
+
+    private void confirmDeleteDevice(DeviceStore.Device d) {
+        new AlertDialog.Builder(this)
+                .setTitle("刪除設備")
+                .setMessage("確定刪除「" + (d.name == null ? "" : d.name) + "」？")
+                .setPositiveButton("刪除", (dialog, which) -> {
                     DeviceStore.delete(this, d.id);
                     renderDevices();
                 })
+                .setNegativeButton("取消", null)
                 .show();
+    }
+
+    private void moveDevice(DeviceStore.Device d, int direction, boolean toEdge) {
+        try {
+            if (d == null || d.id == null) return;
+            List<DeviceStore.Device> list = DeviceStore.load(this);
+            int from = -1;
+            for (int i = 0; i < list.size(); i++) {
+                if (d.id.equals(list.get(i).id)) {
+                    from = i;
+                    break;
+                }
+            }
+            if (from < 0) return;
+            int to;
+            if (toEdge) {
+                to = direction < 0 ? 0 : list.size() - 1;
+            } else {
+                to = from + direction;
+            }
+            if (to < 0) to = 0;
+            if (to >= list.size()) to = list.size() - 1;
+            if (to == from) return;
+            DeviceStore.Device item = list.remove(from);
+            list.add(to, item);
+            DeviceStore.save(this, list);
+            renderDevices();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void moveDeviceByDrag(String fromId, String toId, boolean afterTarget) {
+        try {
+            if (fromId == null || toId == null || fromId.equals(toId)) return;
+            List<DeviceStore.Device> list = DeviceStore.load(this);
+            int from = -1;
+            int to = -1;
+            for (int i = 0; i < list.size(); i++) {
+                DeviceStore.Device item = list.get(i);
+                if (item == null || item.id == null) continue;
+                if (item.id.equals(fromId)) from = i;
+                if (item.id.equals(toId)) to = i;
+            }
+            if (from < 0 || to < 0 || from == to) return;
+            DeviceStore.Device moved = list.remove(from);
+            if (from < to) to--;
+            int insertAt = afterTarget ? to + 1 : to;
+            if (insertAt < 0) insertAt = 0;
+            if (insertAt > list.size()) insertAt = list.size();
+            list.add(insertAt, moved);
+            DeviceStore.save(this, list);
+            renderDevices();
+        } catch (Exception ignored) {
+            renderDevices();
+        }
     }
 
     private void showDeviceDialog(DeviceStore.Device editing) {
@@ -1586,31 +1860,57 @@ public class MainActivity extends Activity {
 
     private String itemNumberByName(String json, String namePart, String key) {
         try {
-            String mark = "\"name\"";
-            int searchFrom = 0;
-            while (true) {
-                int s = json.indexOf(mark, searchFrom);
-                if (s < 0) return "";
-                int colon = json.indexOf(":", s + mark.length());
-                if (colon < 0) return "";
-                int q1 = json.indexOf("\"", colon + 1);
-                if (q1 < 0) return "";
-                int q2 = json.indexOf("\"", q1 + 1);
-                if (q2 < 0) return "";
-                String found = json.substring(q1 + 1, q2);
-                if (found.contains(namePart)) {
-                    int objEnd = json.indexOf("}", q2);
-                    if (objEnd < 0) objEnd = Math.min(json.length(), q2 + 220);
-                    String item = json.substring(q2, Math.min(json.length(), objEnd + 1));
-                    return num(item, key);
+            org.json.JSONObject root = new org.json.JSONObject(json);
+            org.json.JSONArray items = root.optJSONArray("items");
+            if (items == null) return "";
+            for (int i = 0; i < items.length(); i++) {
+                org.json.JSONObject item = items.optJSONObject(i);
+                if (item == null) continue;
+                String n = item.optString("name", "");
+                if (n.indexOf(namePart) >= 0 && item.has(key)) {
+                    Object value = item.opt(key);
+                    return value == null ? "" : String.valueOf(value);
                 }
-                searchFrom = q2 + 1;
             }
+            return "";
         } catch (Exception e) {
             return "";
         }
     }
 
+    private int selposPackCount(String json) {
+        try {
+            org.json.JSONObject root = new org.json.JSONObject(json);
+            org.json.JSONArray items = root.optJSONArray("items");
+            if (items == null) return 0;
+            int count = 0;
+            for (int i = 0; i < items.length(); i++) {
+                org.json.JSONObject item = items.optJSONObject(i);
+                if (item == null) continue;
+                if (item.has("soc") || item.has("voltage") || item.has("current") || item.has("power")) count++;
+            }
+            return count;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private String firstPackNumber(String json, String key) {
+        try {
+            org.json.JSONObject root = new org.json.JSONObject(json);
+            org.json.JSONArray items = root.optJSONArray("items");
+            if (items == null) return "";
+            for (int i = 0; i < items.length(); i++) {
+                org.json.JSONObject item = items.optJSONObject(i);
+                if (item == null || !item.has(key)) continue;
+                Object value = item.opt(key);
+                return value == null ? "" : String.valueOf(value);
+            }
+            return "";
+        } catch (Exception e) {
+            return "";
+        }
+    }
 
     private String cardItemNumber(String json, String label) {
         try {
