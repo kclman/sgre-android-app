@@ -1454,14 +1454,7 @@ public class MainActivity extends Activity {
     }
 
     private void showDeviceActionDialog(DeviceStore.Device d) {
-        String local = (d.localUrl == null || d.localUrl.trim().length() == 0) ? "未設定" : d.localUrl;
-        String remote = (d.remoteUrl == null || d.remoteUrl.trim().length() == 0) ? "未設定" : d.remoteUrl;
-        String info = (d.isDefault ? "目前狀態：預設設備\n\n" : "")
-                + getDeviceRuntime(d)
-                + "\n\n設定內網：" + local
-                + "\n設定外網：" + remote
-                + "\n\n長按卡片可調整首頁排列順序。";
-
+        final String title = d.name == null || d.name.length() == 0 ? "設備" : d.name;
         final String[] actions = new String[]{
                 "上移一格",
                 "下移一格",
@@ -1473,8 +1466,7 @@ public class MainActivity extends Activity {
         };
 
         new AlertDialog.Builder(this)
-                .setTitle(d.name)
-                .setMessage(info)
+                .setTitle("卡片操作：" + title)
                 .setItems(actions, (dialog, which) -> {
                     switch (which) {
                         case 0:
