@@ -730,6 +730,7 @@ public class MainActivity extends Activity {
             cardWidgets.put(d.id, new CardWidgets(d, box, voltage, power, energy, load, alarmStatus));
         }
 
+        applyCardCache(d, box, voltage, power, energy, load, alarmStatus);
         fetchSummary(d, box, voltage, power, energy, load, alarmStatus, null);
         return box;
     }
@@ -961,6 +962,71 @@ public class MainActivity extends Activity {
             return u == null ? "" : u;
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    private String cardCacheKey(DeviceStore.Device d, String suffix) {
+        if (d == null || d.id == null) return "";
+        return d.id + "_card_" + suffix;
+    }
+
+    private boolean hasCardCache(DeviceStore.Device d) {
+        try {
+            if (d == null || d.id == null) return false;
+            SharedPreferences p = getSharedPreferences("sgre_device_runtime", MODE_PRIVATE);
+            return p.getLong(cardCacheKey(d, "time"), 0L) > 0L;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void saveCardCache(DeviceStore.Device d, String labelP, String valueP, String labelE, String valueE, String labelV, String valueV, String labelL, String valueL, String alarmLine) {
+        try {
+            if (d == null || d.id == null) return;
+            if (!hasValue(valueP) && !hasValue(valueE) && !hasValue(valueV) && !hasValue(valueL)) return;
+            getSharedPreferences("sgre_device_runtime", MODE_PRIVATE).edit()
+                    .putString(cardCacheKey(d, "label_p"), labelP == null ? "功率" : labelP)
+                    .putString(cardCacheKey(d, "value_p"), valueP == null ? "" : valueP)
+                    .putString(cardCacheKey(d, "label_e"), labelE == null ? "SOC" : labelE)
+                    .putString(cardCacheKey(d, "value_e"), valueE == null ? "" : valueE)
+                    .putString(cardCacheKey(d, "label_v"), labelV == null ? "電壓" : labelV)
+                    .putString(cardCacheKey(d, "value_v"), valueV == null ? "" : valueV)
+                    .putString(cardCacheKey(d, "label_l"), labelL == null ? "負載" : labelL)
+                    .putString(cardCacheKey(d, "value_l"), valueL == null ? "" : valueL)
+                    .putString(cardCacheKey(d, "alarm"), alarmLine == null ? "" : alarmLine)
+                    .putLong(cardCacheKey(d, "time"), System.currentTimeMillis())
+                    .apply();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private boolean applyCardCache(DeviceStore.Device d, LinearLayout card, TextView voltage, TextView power, TextView energy, TextView load, TextView alarmStatus) {
+        try {
+            if (d == null || d.id == null) return false;
+            SharedPreferences p = getSharedPreferences("sgre_device_runtime", MODE_PRIVATE);
+            long t = p.getLong(cardCacheKey(d, "time"), 0L);
+            if (t <= 0L) return false;
+            setMetricText(power, p.getString(cardCacheKey(d, "label_p"), "功率"), p.getString(cardCacheKey(d, "value_p"), "--"));
+            setMetricText(energy, p.getString(cardCacheKey(d, "label_e"), "SOC"), p.getString(cardCacheKey(d, "value_e"), "--"));
+            setMetricText(voltage, p.getString(cardCacheKey(d, "label_v"), "電壓"), p.getString(cardCacheKey(d, "value_v"), "--"));
+            setMetricText(load, p.getString(cardCacheKey(d, "label_l"), "負載"), p.getString(cardCacheKey(d, "value_l"), "--"));
+            String alarmLine = p.getString(cardCacheKey(d, "alarm"), "");
+            if (alarmStatus != null) {
+                if (alarmLine != null && alarmLine.length() > 0) {
+                    alarmStatus.setText(alarmLine);
+                    alarmStatus.setVisibility(View.VISIBLE);
+                } else {
+                    alarmStatus.setText("");
+                    alarmStatus.setVisibility(View.GONE);
+                }
+            }
+            if (card != null) {
+                card.setAlpha(1f);
+                card.setBackground(bg(Color.rgb(248, 250, 252), 22));
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -1303,6 +1369,13 @@ public class MainActivity extends Activity {
             final String fopenUrl = activeOpenUrl;
 
             runOnUiThread(() -> {
+                if (!ok && hasCardCache(d)) {
+                    // Keep the last good values on screen while the next refresh is still failing/slow.
+                    // This avoids the home page flashing into all "--" after returning from a WebView.
+                    if (urlLabel != null) urlLabel.setText("");
+                    saveDeviceRuntime(d, "目前連線：更新中 / 保留上次資料");
+                    return;
+                }
                 setMetricText(power, flabelP, fp);
                 setMetricText(energy, flabelE, fe);
                 setMetricText(voltage, flabelV, fv);
@@ -1315,6 +1388,9 @@ public class MainActivity extends Activity {
                         alarmStatus.setText("");
                         alarmStatus.setVisibility(View.GONE);
                     }
+                }
+                if (ok) {
+                    saveCardCache(d, flabelP, fp, flabelE, fe, flabelV, fv, flabelL, fl, fa);
                 }
                 if (ok && fopenUrl != null && fopenUrl.trim().length() > 0) {
                     saveDeviceRuntime(d, furl, fopenUrl);
