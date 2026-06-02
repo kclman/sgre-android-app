@@ -1459,21 +1459,91 @@ public class MainActivity extends Activity {
         String info = (d.isDefault ? "目前狀態：預設設備\n\n" : "")
                 + getDeviceRuntime(d)
                 + "\n\n設定內網：" + local
-                + "\n設定外網：" + remote;
+                + "\n設定外網：" + remote
+                + "\n\n長按卡片可調整首頁排列順序。";
+
+        final String[] actions = new String[]{
+                "上移一格",
+                "下移一格",
+                "移到最前",
+                "移到最後",
+                "設為預設",
+                "編輯",
+                "刪除"
+        };
 
         new AlertDialog.Builder(this)
                 .setTitle(d.name)
                 .setMessage(info)
-                .setPositiveButton("編輯", (dialog, which) -> showDeviceDialog(d))
-                .setNeutralButton("設為預設", (dialog, which) -> {
-                    DeviceStore.setDefault(this, d.id);
-                    renderDevices();
+                .setItems(actions, (dialog, which) -> {
+                    switch (which) {
+                        case 0:
+                            moveDevice(d, -1, false);
+                            break;
+                        case 1:
+                            moveDevice(d, 1, false);
+                            break;
+                        case 2:
+                            moveDevice(d, -1, true);
+                            break;
+                        case 3:
+                            moveDevice(d, 1, true);
+                            break;
+                        case 4:
+                            DeviceStore.setDefault(this, d.id);
+                            renderDevices();
+                            break;
+                        case 5:
+                            showDeviceDialog(d);
+                            break;
+                        case 6:
+                            confirmDeleteDevice(d);
+                            break;
+                    }
                 })
-                .setNegativeButton("刪除", (dialog, which) -> {
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void confirmDeleteDevice(DeviceStore.Device d) {
+        new AlertDialog.Builder(this)
+                .setTitle("刪除設備")
+                .setMessage("確定刪除「" + (d.name == null ? "" : d.name) + "」？")
+                .setPositiveButton("刪除", (dialog, which) -> {
                     DeviceStore.delete(this, d.id);
                     renderDevices();
                 })
+                .setNegativeButton("取消", null)
                 .show();
+    }
+
+    private void moveDevice(DeviceStore.Device d, int direction, boolean toEdge) {
+        try {
+            if (d == null || d.id == null) return;
+            List<DeviceStore.Device> list = DeviceStore.load(this);
+            int from = -1;
+            for (int i = 0; i < list.size(); i++) {
+                if (d.id.equals(list.get(i).id)) {
+                    from = i;
+                    break;
+                }
+            }
+            if (from < 0) return;
+            int to;
+            if (toEdge) {
+                to = direction < 0 ? 0 : list.size() - 1;
+            } else {
+                to = from + direction;
+            }
+            if (to < 0) to = 0;
+            if (to >= list.size()) to = list.size() - 1;
+            if (to == from) return;
+            DeviceStore.Device item = list.remove(from);
+            list.add(to, item);
+            DeviceStore.save(this, list);
+            renderDevices();
+        } catch (Exception ignored) {
+        }
     }
 
     private void showDeviceDialog(DeviceStore.Device editing) {
