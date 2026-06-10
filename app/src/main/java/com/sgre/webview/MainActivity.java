@@ -20,6 +20,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.net.Uri;
 import android.text.SpannableString;
+import android.text.TextUtils;
 import android.text.Spanned;
 import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
@@ -735,6 +736,88 @@ public class MainActivity extends Activity {
         return box;
     }
 
+    private void configureAlarmLine(TextView tv, DeviceStore.Device d, String line, String fullText) {
+        if (tv == null) return;
+        String safeLine = line == null ? "" : line.trim();
+        String safeFull = fullText == null || fullText.trim().length() == 0 ? safeLine : fullText.trim();
+        tv.setContentDescription(safeFull);
+        tv.setOnClickListener(null);
+        tv.setSelected(false);
+        tv.setHorizontallyScrolling(false);
+        tv.setEllipsize(TextUtils.TruncateAt.END);
+        if (safeLine.length() == 0) {
+            tv.setText("");
+            tv.setVisibility(View.GONE);
+            return;
+        }
+        tv.setText(safeLine);
+        tv.setVisibility(View.VISIBLE);
+        tv.setClickable(true);
+        tv.setOnClickListener(v -> showAlarmFullDialog(d, String.valueOf(tv.getContentDescription())));
+        tv.post(() -> updateAlarmMarquee(tv));
+    }
+
+    private void updateAlarmMarquee(TextView tv) {
+        try {
+            if (tv == null || tv.getVisibility() != View.VISIBLE) return;
+            String text = tv.getText() == null ? "" : tv.getText().toString();
+            int available = tv.getWidth() - tv.getPaddingLeft() - tv.getPaddingRight();
+            if (available <= dp(8) || text.length() == 0) return;
+            boolean overflow = tv.getPaint().measureText(text) > available;
+            tv.setSingleLine(true);
+            tv.setHorizontallyScrolling(overflow);
+            tv.setEllipsize(overflow ? TextUtils.TruncateAt.MARQUEE : TextUtils.TruncateAt.END);
+            tv.setMarqueeRepeatLimit(-1);
+            tv.setSelected(overflow);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void showAlarmFullDialog(DeviceStore.Device d, String fullText) {
+        String text = fullText == null || fullText.trim().length() == 0 ? "目前沒有警報內容。" : fullText.trim();
+        TextView body = new TextView(this);
+        body.setText(text);
+        body.setTextSize(15);
+        body.setTextColor(Color.rgb(42, 54, 68));
+        body.setLineSpacing(dp(2), 1.0f);
+        body.setPadding(dp(18), dp(8), dp(18), dp(8));
+        body.setTextIsSelectable(true);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body);
+        String title = "完整警報";
+        if (d != null && d.name != null && d.name.trim().length() > 0) title = d.name + "｜完整警報";
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setView(scroll)
+                .setPositiveButton("開啟設備", (dialog, which) -> { if (d != null) openDevice(d); })
+                .setNegativeButton("關閉", null)
+                .show();
+    }
+
+    private String buildAlarmFullText(DeviceStore.Device d, String levelText, String mainText, String summaryText, String msgText) {
+        StringBuilder sb = new StringBuilder();
+        if (d != null && d.name != null && d.name.trim().length() > 0) {
+            sb.append("設備：").append(d.name.trim()).append("\n");
+        }
+        if (levelText != null && levelText.trim().length() > 0) {
+            sb.append("等級：").append(levelText.trim()).append("\n");
+        }
+        if (mainText != null && mainText.trim().length() > 0) {
+            sb.append("主要：").append(mainText.trim()).append("\n");
+        }
+        if (summaryText != null && summaryText.trim().length() > 0 && !summaryText.trim().equals(mainText == null ? "" : mainText.trim())) {
+            sb.append("摘要：").append(summaryText.trim()).append("\n");
+        }
+        if (msgText != null && msgText.trim().length() > 0
+                && !msgText.trim().equals(mainText == null ? "" : mainText.trim())
+                && !msgText.trim().equals(summaryText == null ? "" : summaryText.trim())) {
+            sb.append("訊息：").append(msgText.trim()).append("\n");
+        }
+        sb.append("更新：").append(fmtTime(System.currentTimeMillis()));
+        return sb.toString().trim();
+    }
+
     private TextView metric(String label, String value, int dotColor) {
         TextView t = new TextView(this);
         t.setTag(Integer.valueOf(dotColor));
@@ -980,7 +1063,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void saveCardCache(DeviceStore.Device d, String labelP, String valueP, String labelE, String valueE, String labelV, String valueV, String labelL, String valueL, String alarmLine) {
+    private void saveCardCache(DeviceStore.Device d, String labelP, String valueP, String labelE, String valueE, String labelV, String valueV, String labelL, String valueL, String alarmLine, String alarmFullText) {
         try {
             if (d == null || d.id == null) return;
             if (!hasValue(valueP) && !hasValue(valueE) && !hasValue(valueV) && !hasValue(valueL)) return;
@@ -994,6 +1077,7 @@ public class MainActivity extends Activity {
                     .putString(cardCacheKey(d, "label_l"), labelL == null ? "負載" : labelL)
                     .putString(cardCacheKey(d, "value_l"), valueL == null ? "" : valueL)
                     .putString(cardCacheKey(d, "alarm"), alarmLine == null ? "" : alarmLine)
+                    .putString(cardCacheKey(d, "alarm_full"), alarmFullText == null ? "" : alarmFullText)
                     .putLong(cardCacheKey(d, "time"), System.currentTimeMillis())
                     .apply();
         } catch (Exception ignored) {
@@ -1011,15 +1095,8 @@ public class MainActivity extends Activity {
             setMetricText(voltage, p.getString(cardCacheKey(d, "label_v"), "電壓"), p.getString(cardCacheKey(d, "value_v"), "--"));
             setMetricText(load, p.getString(cardCacheKey(d, "label_l"), "負載"), p.getString(cardCacheKey(d, "value_l"), "--"));
             String alarmLine = p.getString(cardCacheKey(d, "alarm"), "");
-            if (alarmStatus != null) {
-                if (alarmLine != null && alarmLine.length() > 0) {
-                    alarmStatus.setText(alarmLine);
-                    alarmStatus.setVisibility(View.VISIBLE);
-                } else {
-                    alarmStatus.setText("");
-                    alarmStatus.setVisibility(View.GONE);
-                }
-            }
+            String alarmFullText = p.getString(cardCacheKey(d, "alarm_full"), alarmLine);
+            configureAlarmLine(alarmStatus, d, alarmLine, alarmFullText);
             if (card != null) {
                 card.setAlpha(1f);
                 card.setBackground(bg(Color.rgb(248, 250, 252), 22));
@@ -1063,6 +1140,7 @@ public class MainActivity extends Activity {
             String labelV = "電壓";
             String labelL = "負載";
             String alarmLine = "";
+            String alarmFullText = "";
             String activeUrlLabel = "目前連線：未連線";
             String activeOpenUrl = "";
 
@@ -1205,16 +1283,19 @@ public class MainActivity extends Activity {
                     if (!hasValue(v) && battVolt.length() > 0) v = oneDecimalText(battVolt) + "V";
                     if (jsonBool(alarm, "alarm")) {
                         String levelText = jsonString(alarm, "level_text");
-                        String mainText = firstNonEmpty(jsonString(alarm, "main"), jsonString(alarm, "msg"));
+                        String msgText = jsonString(alarm, "msg");
+                        String summaryText = jsonString(alarm, "summary");
+                        String mainText = firstNonEmpty(jsonString(alarm, "main"), msgText);
                         if (levelText.length() == 0 || "正常".equals(levelText)) levelText = "警告";
                         if (mainText.length() == 0 || "無告警".equals(mainText) || "正常".equals(mainText)) {
-                            mainText = firstNonEmpty(jsonString(alarm, "summary"), "未知告警");
+                            mainText = firstNonEmpty(summaryText, "未知告警");
                         }
                         if (mainText.startsWith(levelText + "｜")) {
                             alarmLine = mainText;
                         } else {
                             alarmLine = levelText + "｜" + mainText;
                         }
+                        alarmFullText = buildAlarmFullText(d, levelText, mainText, summaryText, msgText);
                     }
                     if (liveOpenUrl != null && liveOpenUrl.trim().length() > 0) {
                         saveDeviceRuntime(d, activeUrlLabel, liveOpenUrl);
@@ -1365,6 +1446,7 @@ public class MainActivity extends Activity {
             final String flabelV = labelV;
             final String flabelL = labelL;
             final String fa = alarmLine;
+            final String faf = alarmFullText;
             final String furl = activeUrlLabel;
             final String fopenUrl = activeOpenUrl;
 
@@ -1380,17 +1462,9 @@ public class MainActivity extends Activity {
                 setMetricText(energy, flabelE, fe);
                 setMetricText(voltage, flabelV, fv);
                 setMetricText(load, flabelL, fl);
-                if (alarmStatus != null) {
-                    if (fa != null && fa.length() > 0) {
-                        alarmStatus.setText(fa);
-                        alarmStatus.setVisibility(View.VISIBLE);
-                    } else {
-                        alarmStatus.setText("");
-                        alarmStatus.setVisibility(View.GONE);
-                    }
-                }
+                configureAlarmLine(alarmStatus, d, fa, faf);
                 if (ok) {
-                    saveCardCache(d, flabelP, fp, flabelE, fe, flabelV, fv, flabelL, fl, fa);
+                    saveCardCache(d, flabelP, fp, flabelE, fe, flabelV, fv, flabelL, fl, fa, faf);
                 }
                 if (ok && fopenUrl != null && fopenUrl.trim().length() > 0) {
                     saveDeviceRuntime(d, furl, fopenUrl);
