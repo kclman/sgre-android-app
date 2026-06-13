@@ -42,6 +42,7 @@ import android.widget.Spinner;
 import android.widget.TextView;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -89,6 +90,15 @@ public class MainActivity extends Activity {
             this.load = load;
             this.alarmStatus = alarmStatus;
         }
+    }
+
+    private static class ParsedAlarm {
+        boolean active = false;
+        String level = "";
+        String main = "";
+        String summary = "";
+        String msg = "";
+        String line = "";
     }
 
     @Override
@@ -932,6 +942,100 @@ public class MainActivity extends Activity {
         return "";
     }
 
+    private boolean isNoAlarmText(String raw) {
+        if (raw == null) return true;
+        String s = raw.trim();
+        if (s.length() == 0) return true;
+        String lower = s.toLowerCase(java.util.Locale.US);
+        if ("--".equals(s) || "0".equals(s) || "null".equals(lower) || "none".equals(lower) || "ok".equals(lower)) return true;
+        return "正常".equals(s) || "無告警".equals(s) || "无告警".equals(s) || "沒有告警".equals(s) || "無警告".equals(s) || "无警告".equals(s);
+    }
+
+    private String cleanAlarmText(String raw) {
+        if (raw == null) return "";
+        String s = raw.trim();
+        s = s.replace("\u0000", "").trim();
+        s = s.replaceAll("^警報[:：]\\s*\\d+\\s*", "");
+        s = s.replaceAll("^告警[:：]\\s*\\d+\\s*", "");
+        s = s.replaceAll("^警告[:：]\\s*\\d+\\s*", "");
+        s = s.replaceAll("^Alarm[:：]\\s*\\d+\\s*", "");
+        return s.trim();
+    }
+
+    private String firstMeaningfulAlarmText(String... values) {
+        for (String value : values) {
+            String clean = cleanAlarmText(value);
+            if (!isNoAlarmText(clean)) return clean;
+        }
+        return "";
+    }
+
+    private ParsedAlarm parseSgreAlarmPayload(String json, String fallbackSoc, String fallbackBattVolt) {
+        ParsedAlarm parsed = new ParsedAlarm();
+        if (json == null || json.length() == 0) return parsed;
+
+        boolean active = jsonBool(json, "alarm_active")
+                || jsonBool(json, "alarm")
+                || jsonBool(json, "warning")
+                || jsonBool(json, "has_alarm")
+                || jsonBool(json, "fault_active");
+
+        String level = firstMeaningfulAlarmText(
+                jsonString(json, "text_alarm_level"),
+                jsonString(json, "alarm_level_text"),
+                jsonString(json, "warning_level"),
+                jsonString(json, "level_text"));
+        if (level.length() == 0 || "0".equals(level) || "正常".equals(level)
+                || (level.indexOf("警") < 0 && level.indexOf("故障") < 0 && level.indexOf("提示") < 0 && level.indexOf("嚴重") < 0)) {
+            level = "警告";
+        }
+
+        String main = firstMeaningfulAlarmText(
+                jsonString(json, "alarm_msg"),
+                jsonString(json, "warning_msg"),
+                jsonString(json, "warning_text"),
+                jsonString(json, "alarm_text"),
+                jsonString(json, "text_alarm_main"),
+                jsonString(json, "status_text"),
+                jsonString(json, "alarm_status"),
+                jsonString(json, "main"),
+                jsonString(json, "msg"),
+                jsonString(json, "summary"));
+
+        String code = firstNonEmpty(num(json, "code"), num(json, "alarm_code"), jsonString(json, "code"));
+        if (main.length() == 0 && "102".equals(code)) main = "電池SOC過低";
+
+        String socText = firstNonEmpty(fallbackSoc, num(json, "soc"), num(json, "battery_soc"), num(json, "v_battery_soc"));
+        try {
+            if (main.length() == 0 && socText.length() > 0) {
+                float soc = Float.parseFloat(socText);
+                if (soc > 0f && soc < 10f) main = "電池SOC過低";
+            }
+        } catch (Exception ignored) {
+        }
+
+        String battVoltText = firstNonEmpty(fallbackBattVolt, num(json, "batt_v"), num(json, "battery_voltage"), num(json, "v_battery_voltage"));
+        try {
+            if (main.length() == 0 && battVoltText.length() > 0) {
+                float bv = Float.parseFloat(battVoltText);
+                if (bv > 1f && bv < 45f) main = "電池電壓過低";
+            }
+        } catch (Exception ignored) {
+        }
+
+        if (!active && main.length() > 0) active = true;
+        if (active && main.length() == 0) main = "未知告警";
+        if (!active) return parsed;
+
+        parsed.active = true;
+        parsed.level = level;
+        parsed.main = main;
+        parsed.summary = firstMeaningfulAlarmText(jsonString(json, "summary"), jsonString(json, "status_text"));
+        parsed.msg = firstMeaningfulAlarmText(jsonString(json, "msg"), jsonString(json, "alarm_msg"), jsonString(json, "warning_msg"));
+        parsed.line = main.startsWith(level + "｜") ? main : (level + "｜" + main);
+        return parsed;
+    }
+
     private String shortUrl(String raw) {
         if (raw == null || raw.trim().length() == 0) return "未設定";
         return raw.replace("http://", "").replace("https://", "");
@@ -1164,6 +1268,9 @@ public class MainActivity extends Activity {
                     }
                 }
 
+                String liveBatterySocForAlarm = "";
+                String liveBattVoltForAlarm = "";
+
                 if (live.length() > 0) {
                     online = true;
                     activeUrlLabel = usingRemote ? "目前外網：" + shortUrl(d.remoteUrl) : "目前內網：" + shortUrl(d.localUrl);
@@ -1201,6 +1308,14 @@ public class MainActivity extends Activity {
                             liveVal(live, "BattVolt"),
                             liveVal(live, "7530"),
                             liveVal(live, "v_7530"));
+
+                    liveBatterySocForAlarm = batterySoc;
+                    liveBattVoltForAlarm = battVoltLive;
+                    ParsedAlarm liveAlarm = parseSgreAlarmPayload(live, liveBatterySocForAlarm, liveBattVoltForAlarm);
+                    if (liveAlarm.active) {
+                        alarmLine = liveAlarm.line;
+                        alarmFullText = buildAlarmFullText(d, liveAlarm.level, liveAlarm.main, liveAlarm.summary, liveAlarm.msg);
+                    }
 
                     String upsLoad = firstNonEmpty(
                             liveVal(live, "v_ac_out_sum"),
@@ -1247,11 +1362,14 @@ public class MainActivity extends Activity {
                     final String liveLabelL = labelL;
                     final String liveUrl = activeUrlLabel;
                     final String liveOpen = liveOpenUrl;
+                    final String liveAlarmLine = alarmLine;
+                    final String liveAlarmFull = alarmFullText;
                     runOnUiThread(() -> {
                         setMetricText(power, liveLabelP, liveP);
                         setMetricText(energy, liveLabelE, liveE);
                         setMetricText(voltage, liveLabelV, liveV);
                         setMetricText(load, liveLabelL, liveL);
+                        configureAlarmLine(alarmStatus, d, liveAlarmLine, liveAlarmFull);
                         saveDeviceRuntime(d, liveUrl, liveOpen);
                         if (urlLabel != null) urlLabel.setText("");
                         card.setAlpha(1f);
@@ -1281,21 +1399,13 @@ public class MainActivity extends Activity {
                     activeUrlLabel = usingRemote ? "目前外網：" + shortUrl(d.remoteUrl) : "目前內網：" + shortUrl(d.localUrl);
                     String battVolt = num(alarm, "batt_v");
                     if (!hasValue(v) && battVolt.length() > 0) v = oneDecimalText(battVolt) + "V";
-                    if (jsonBool(alarm, "alarm")) {
-                        String levelText = jsonString(alarm, "level_text");
-                        String msgText = jsonString(alarm, "msg");
-                        String summaryText = jsonString(alarm, "summary");
-                        String mainText = firstNonEmpty(jsonString(alarm, "main"), msgText);
-                        if (levelText.length() == 0 || "正常".equals(levelText)) levelText = "警告";
-                        if (mainText.length() == 0 || "無告警".equals(mainText) || "正常".equals(mainText)) {
-                            mainText = firstNonEmpty(summaryText, "未知告警");
-                        }
-                        if (mainText.startsWith(levelText + "｜")) {
-                            alarmLine = mainText;
-                        } else {
-                            alarmLine = levelText + "｜" + mainText;
-                        }
-                        alarmFullText = buildAlarmFullText(d, levelText, mainText, summaryText, msgText);
+                    ParsedAlarm apiAlarm = parseSgreAlarmPayload(
+                            alarm,
+                            firstNonEmpty(num(alarm, "soc"), num(alarm, "battery_soc"), liveBatterySocForAlarm),
+                            firstNonEmpty(battVolt, liveBattVoltForAlarm));
+                    if (apiAlarm.active) {
+                        alarmLine = apiAlarm.line;
+                        alarmFullText = buildAlarmFullText(d, apiAlarm.level, apiAlarm.main, apiAlarm.summary, apiAlarm.msg);
                     }
                     if (liveOpenUrl != null && liveOpenUrl.trim().length() > 0) {
                         saveDeviceRuntime(d, activeUrlLabel, liveOpenUrl);
@@ -1829,10 +1939,17 @@ public class MainActivity extends Activity {
             conn.setRequestMethod("GET");
             if (conn.getResponseCode() != 200) return "";
             InputStream is = conn.getInputStream();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buf = new byte[4096];
-            int n = is.read(buf);
-            if (n <= 0) return "";
-            return new String(buf, 0, n);
+            int n;
+            int total = 0;
+            while ((n = is.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                total += n;
+                if (total >= 131072) break;
+            }
+            if (out.size() <= 0) return "";
+            return out.toString("UTF-8");
         } catch (Exception e) {
             return "";
         } finally {

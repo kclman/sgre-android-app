@@ -11,6 +11,7 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.SystemClock;
 import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
@@ -69,16 +70,37 @@ public class AlarmReceiver extends BroadcastReceiver {
                     error = remote.error;
                 }
 
-                alarm = body.contains("\"alarm\":true");
-                msg = str(body, "msg");
+                alarm = body.contains("\"alarm\":true")
+                        || body.contains("\"alarm_active\":true")
+                        || body.contains("\"warning\":true");
+                msg = firstMeaningful(
+                        str(body, "alarm_msg"),
+                        str(body, "warning_msg"),
+                        str(body, "warning_text"),
+                        str(body, "alarm_text"),
+                        str(body, "msg"));
                 code = num(body, "code");
                 alarmKey = str(body, "alarm_key");
-                main = str(body, "main");
+                main = firstMeaningful(
+                        str(body, "alarm_msg"),
+                        str(body, "warning_msg"),
+                        str(body, "warning_text"),
+                        str(body, "alarm_text"),
+                        str(body, "text_alarm_main"),
+                        str(body, "status_text"),
+                        str(body, "alarm_status"),
+                        str(body, "main"),
+                        msg,
+                        str(body, "summary"));
                 category = str(body, "category");
-                levelText = str(body, "level_text");
-                summary = str(body, "summary");
+                levelText = firstMeaningful(str(body, "text_alarm_level"), str(body, "alarm_level_text"), str(body, "level_text"));
+                if (levelText.length() > 0 && levelText.indexOf("警") < 0 && levelText.indexOf("故障") < 0 && levelText.indexOf("提示") < 0 && levelText.indexOf("嚴重") < 0) levelText = "";
+                summary = firstMeaningful(str(body, "summary"), str(body, "status_text"));
                 raw = str(body, "raw");
 
+                if (main.length() == 0 && "102".equals(code)) main = "電池SOC過低";
+                if (main.length() > 0) alarm = true;
+                if (alarm && levelText.length() == 0) levelText = "警告";
                 if (alarm && msg.length() == 0) msg = firstNonEmpty(main, summary, "SGRE 警報");
                 if (alarm && alarmKey.length() == 0) {
                     alarmKey = "code_" + code + "_" + firstNonEmpty(main, msg, category, raw);
@@ -268,13 +290,20 @@ public class AlarmReceiver extends BroadcastReceiver {
                 return r;
             }
             InputStream is = conn.getInputStream();
-            byte[] buf = new byte[768];
-            int n = is.read(buf);
-            if (n <= 0) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            int total = 0;
+            while ((n = is.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                total += n;
+                if (total >= 131072) break;
+            }
+            if (out.size() <= 0) {
                 r.error = "空回應";
                 return r;
             }
-            r.body = new String(buf, 0, n);
+            r.body = out.toString("UTF-8");
             r.error = "";
             return r;
         } catch (Exception e) {
@@ -356,6 +385,35 @@ public class AlarmReceiver extends BroadcastReceiver {
         if (values == null) return "";
         for (String v : values) {
             if (v != null && v.length() > 0) return v;
+        }
+        return "";
+    }
+
+    private static boolean isNoAlarmText(String raw) {
+        if (raw == null) return true;
+        String s = raw.trim();
+        if (s.length() == 0) return true;
+        String lower = s.toLowerCase(java.util.Locale.US);
+        if ("--".equals(s) || "0".equals(s) || "null".equals(lower) || "none".equals(lower) || "ok".equals(lower)) return true;
+        return "正常".equals(s) || "無告警".equals(s) || "无告警".equals(s) || "沒有告警".equals(s) || "無警告".equals(s) || "无警告".equals(s);
+    }
+
+    private static String cleanAlarmText(String raw) {
+        if (raw == null) return "";
+        String s = raw.trim();
+        s = s.replace("\u0000", "").trim();
+        s = s.replaceAll("^警報[:：]\\s*\\d+\\s*", "");
+        s = s.replaceAll("^告警[:：]\\s*\\d+\\s*", "");
+        s = s.replaceAll("^警告[:：]\\s*\\d+\\s*", "");
+        s = s.replaceAll("^Alarm[:：]\\s*\\d+\\s*", "");
+        return s.trim();
+    }
+
+    private static String firstMeaningful(String... values) {
+        if (values == null) return "";
+        for (String v : values) {
+            String clean = cleanAlarmText(v);
+            if (!isNoAlarmText(clean)) return clean;
         }
         return "";
     }
