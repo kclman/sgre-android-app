@@ -730,7 +730,7 @@ public class WebViewActivity extends Activity {
             } catch (Exception ignored) {
             }
         }
-        AlarmReceiver.scheduleNext(this, 60000L);
+        AlarmReceiver.scheduleNext(this, AlarmReceiver.BACKGROUND_NORMAL_CHECK_MS);
     }
 
     @Override

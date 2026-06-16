@@ -22,6 +22,11 @@ public class AlarmReceiver extends BroadcastReceiver {
     private static final int ALARM_ID = 3302;
     private static final String HISTORY_KEY = "alarm_history_lines";
     private static final int HISTORY_MAX_LINES = 30;
+    // Power saving: normal background checks are deliberately slow and non-wakeup.
+    // Foreground pages cancel this receiver; WebView timers are paused by the activities.
+    public static final long BACKGROUND_NORMAL_CHECK_MS = 15L * 60L * 1000L;
+    public static final long BACKGROUND_ACTIVE_ALARM_CHECK_MS = 5L * 60L * 1000L;
+
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -47,7 +52,7 @@ public class AlarmReceiver extends BroadcastReceiver {
         String levelText = "";
         String summary = "";
         String raw = "";
-        long next = 60000L;
+        long next = BACKGROUND_NORMAL_CHECK_MS;
 
         try {
             DeviceStore.Device d = DeviceStore.getDefault(context);
@@ -115,7 +120,7 @@ public class AlarmReceiver extends BroadcastReceiver {
             int normalSeen = sp.getInt("normal_seen_count", 0);
 
             if (alarm) {
-                next = 15000L;
+                next = BACKGROUND_ACTIVE_ALARM_CHECK_MS;
                 normalSeen = 0;
                 if (alarmKey.length() > 0 && !alarmKey.equals(lastKey)) {
                     String notifyTitle = "SGRE " + firstNonEmpty(levelText, "警報");
@@ -177,10 +182,16 @@ public class AlarmReceiver extends BroadcastReceiver {
             AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
             if (am != null) {
                 long at = SystemClock.elapsedRealtime() + delayMs;
-                if (Build.VERSION.SDK_INT >= 23) {
-                    am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+                boolean activeAlarmRecheck = delayMs <= BACKGROUND_ACTIVE_ALARM_CHECK_MS;
+                int type = activeAlarmRecheck
+                        ? AlarmManager.ELAPSED_REALTIME_WAKEUP
+                        : AlarmManager.ELAPSED_REALTIME;
+                // Normal background polling should not wake the phone from sleep.
+                // Only an already-active alarm uses wakeup recheck, and even that is slowed down.
+                if (Build.VERSION.SDK_INT >= 23 && activeAlarmRecheck) {
+                    am.setAndAllowWhileIdle(type, at, pi);
                 } else {
-                    am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+                    am.set(type, at, pi);
                 }
             }
             context.getSharedPreferences(DEBUG_PREF, Context.MODE_PRIVATE).edit()

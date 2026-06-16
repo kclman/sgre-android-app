@@ -57,7 +57,7 @@ import java.util.Map;
 public class MainActivity extends Activity {
     private static final int REQ_IMPORT_DEVICES_FILE = 7101;
     private static final int REQ_EXPORT_DEVICES_FILE = 7102;
-    private static final long HOME_SGRE_REFRESH_MS = 10000L;
+    private static final long HOME_SGRE_REFRESH_MS = 30000L;
     private LinearLayout listLayout;
     private boolean autoOpened = false;
     private boolean homeVisible = false;
@@ -128,7 +128,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         stopHomeRefresh();
-        AlarmReceiver.scheduleNext(this, 60000L);
+        AlarmReceiver.scheduleNext(this, AlarmReceiver.BACKGROUND_NORMAL_CHECK_MS);
     }
 
     private boolean isDarkMode() {
@@ -564,7 +564,7 @@ public class MainActivity extends Activity {
         Button schedule = new Button(this);
         schedule.setText("排程 60 秒後背景檢查");
         schedule.setOnClickListener(v -> {
-            AlarmReceiver.scheduleNext(this, 60000L);
+            AlarmReceiver.scheduleNext(this, AlarmReceiver.BACKGROUND_NORMAL_CHECK_MS);
             info.setText(alarmDebugText());
         });
         panel.addView(schedule);
